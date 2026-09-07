@@ -121,6 +121,15 @@ PLA + PETG, so it is not a material-specific number.
   defaults to Cool Plate. The filament profile therefore has to set *every* plate-temp
   variant to 80 °C or GUI and CLI slices will disagree — see `TODO.md`.
 
+### One expected error in the log
+
+Every slice logs `Invalid T command (T1).` once, at error level. It is benign: the start
+block emits `T1` unconditionally because the reference does, but OrcaSlicer's *G-code
+post-processor* rejects a tool index beyond the number of filaments **used** in the print
+(`v2.4.2:GCode/GCodeProcessor.cpp:5490`). The `T1` is still written to the file correctly;
+only the time and filament estimates ignore the prime excursion. Silencing it would mean
+deviating from the reference, so it stays. See `TODO.md`.
+
 ### Deliberately not configured
 
 - **Network / print-host.** The i-Fast speaks a proprietary UDP protocol OrcaSlicer does

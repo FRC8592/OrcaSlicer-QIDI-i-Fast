@@ -120,6 +120,15 @@ nothing else has been started.
       would have made `get_current_vendor_type()` (`:612`–`641`) classify the i-Fast as
       `VendorType::Klipper_Qidi`, which is wrong (that enum is inert at `v2.4.2`, but
       only by accident). Cost: no vendor bed model/texture — cosmetic.
+- [x] **QIDI vendor enabled via the X-Max 3 model** (2026-09-07). The user also owns an
+      X-Max 3, so that is what the wizard installed. **This is fine and does not violate
+      hard rule 2.** Vendor enablement copies the *whole* `Qidi.json` bundle into
+      `<config>/system/` (`PresetUpdater.cpp:1068`–`1108`); the per-model selection only
+      controls preset *visibility*, not presence. So the legacy `Qidi X-Max 0.4 nozzle`,
+      `fdm_qidi_common` and `fdm_machine_common` are all present and our `inherits`
+      resolves — verified by slicing against a copy of the user's real config. The
+      Klipper-generation X-Max 3 presets are merely installed alongside; **no value in
+      this repo is sourced from them.**
 - [x] **Install target: OrcaSlicer 2.4.2 flatpak** (2026-09-07). Flathub renamed the app
       to `com.orcaslicer.OrcaSlicer`; the old bundle-installed
       `io.github.softfever.OrcaSlicer` 2.0.0 had a dead origin and could not be upgraded.
@@ -216,6 +225,29 @@ later tasks:
       GUI would accept it. Task 4 and the task-6 harness must account for this; decide
       then between listing the base name too and using
       `compatible_printers_condition`.
+
+### Known log noise: `Invalid T command (T1).`
+
+Every slice logs this once, at `error` level. It is **benign, and must not be "fixed"
+by changing the start block.**
+
+`GCodeProcessor::process_T` (`v2.4.2:GCode/GCodeProcessor.cpp:5490`–`5494`) rejects any
+`T<n>` where `n >= m_result.filaments_count` and skips `process_filament_change`. Our
+start block emits `T1` unconditionally — because **the reference does**, in both the
+single- and dual-material exports (§2/§3 of the extraction) — but on a single-material
+print `filaments_count` is 1, so the *post-processor* refuses it. Confirmed with one and
+with two filaments loaded; it is the number of filaments **used**, not loaded, that
+counts.
+
+Impact is confined to the G-code processor's estimates: the `T1`/`T0` prime excursion is
+not attributed to extruder 1 in the time and filament statistics. The emitted G-code is
+unaffected — `T1` is written to the file verbatim (verified), and the immediately
+following `T0` re-syncs the processor's tool state, so nothing downstream is wrong.
+
+Gating the `T1` on `is_extruder_used[1]` would silence it, but would deviate from ground
+truth: QIDI Print primes both hotends in the start block whether or not T1 carries
+filament. Hard rule "use the blocks as-is" wins. The task-6 harness must whitelist this
+line.
 
 ### Accepted diffs for task 6 introduced by task 3
 
