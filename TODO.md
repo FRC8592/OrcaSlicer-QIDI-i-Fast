@@ -40,15 +40,16 @@ nothing else has been started.
       **Not yet executed: the tool-change block.** Its shape is derived from the
       `v2.4.2` source, but forcing a body tool change needs a two-material 3MF with
       per-object extruder assignment — task 6's job.
-- [ ] **4. Process profile** — 0.20 mm standard, inheriting from
-      `0.20mm Standard @Qidi XMax` (the base changed; see **Decided**). Add 0.15/0.30
-      only if trivial. Do **not** import speeds from QIDI's Cura profile.
-      **Must set `enable_prime_tower = 0`.** With a prime tower Orca takes the
-      `WipeTowerIntegration` path (`v2.4.2:GCode.cpp:813`+) instead of
-      `GCode::set_extruder` (`:7952`), and the `change_filament_gcode` written in task 3
-      no longer applies.
-      Also name it `0.20mm Standard @QIDI i-Fast` — the machine profile's
-      `default_print_profile` already forward-references that name.
+- [x] **4. Process profiles** — five files in `profiles/process/`, one per legacy
+      layer height (`0.12mm Fine` / `0.16mm Optimal` / `0.20mm Standard` /
+      `0.25mm Draft` / `0.30mm Extra Draft`, each `@QIDI i-Fast`), each a thin override
+      of its stock `@Qidi XMax` counterpart. Three keys only:
+      `initial_layer_print_height` `0.3`, `enable_prime_tower` `0`, and a
+      `compatible_printers` list naming **both** our printer and the base. Speeds and
+      line widths are inherited, not imported from Cura, per the handoff.
+      All five verified by CLI slice: exit 0, first layer at `Z0.3` over their own
+      pitch, no prime tower. Three machine-profile defects were found and fixed in the
+      process — see **Found by task 4** below.
 - [ ] **5. Filament profile** — one generic PLA inheriting Orca's generic PLA, temps
       from QIDI's reference profile, bed 80 °C (see above).
 - [ ] **6. Validate** — derive the Orca CLI invocation from `--help` and the repo docs
@@ -129,6 +130,31 @@ nothing else has been started.
       resolves — verified by slicing against a copy of the user's real config. The
       Klipper-generation X-Max 3 presets are merely installed alongside; **no value in
       this repo is sourced from them.**
+- [x] **First layer height 0.3 mm on every process profile** (2026-09-07). From
+      `reference/single-extruder.gcode`, which prints layer 0 at `Z0.3` and later layers
+      at `Z0.5 / Z0.7 / Z0.9` — a 0.3 mm first layer over a 0.2 mm pitch. The verbatim
+      start block also primes at `G0 X0 Y4 Z0.3`, so 0.3 is the height that hardcoded
+      prime line assumes; that is why it applies to **all five** variants and not just
+      the 0.20 one. Overrides the stock bases (each sets it equal to its own layer
+      height) and QIDI's ini (`first_layer_height = 0.35`). Recorded below.
+- [x] **`compatible_printers` lists both printer names** (2026-09-07):
+      `["QIDI i-Fast 0.4 nozzle", "Qidi X-Max 0.4 nozzle"]`. Both are needed and they
+      are needed by different code paths:
+      the GUI's `is_compatible_with_printer` (`v2.4.2:Preset.cpp:837`–`839`) matches
+      `active_printer.preset.name`, while the CLI (`OrcaSlicer.cpp:2578`) matches
+      `new_printer_system_name`, which is the *machine preset's `inherits` value*
+      (`:2045`). `compatible_printers_condition` is not an alternative: the CLI never
+      evaluates it, and `is_compatible_with_printer` only falls through to the condition
+      when `compatible_printers` is empty (`Preset.cpp:828`).
+      Accepted side effect: the five presets also appear under the stock
+      `Qidi X-Max 0.4 nozzle` printer in the GUI.
+- [x] **Process profiles are thin `inherits` overrides, not flattened** (2026-09-07).
+      Idiomatic, and correct in the GUI, which resolves `inherits` properly. The CLI does
+      not (see below), so the task-6 harness flattens the chain itself.
+- [x] **All five legacy layer heights ship** (2026-09-07): 0.12 / 0.16 / 0.20 / 0.25 /
+      0.30, matching the five `@Qidi XMax` process profiles OrcaSlicer `v2.4.2` provides.
+      Each is the same three-key override, so the marginal cost over shipping 0.20 alone
+      is documentation, not derivation. Only 0.20 is corroborated by reference G-code.
 - [x] **Install target: OrcaSlicer 2.4.2 flatpak** (2026-09-07). Flathub renamed the app
       to `com.orcaslicer.OrcaSlicer`; the old bundle-installed
       `io.github.softfever.OrcaSlicer` 2.0.0 had a dead origin and could not be upgraded.
@@ -188,10 +214,11 @@ _Populated as profiles are written._
 - [ ] **`TODO(verify):` `nozzle_type: ["brass","brass"]` assumes the standard head.**
       Follows the handoff's "assume the standard head" instruction, not a measurement.
       See the open head-assembly question above. Only affects Orca's abrasion warnings.
-- [ ] **`TODO(verify):` forward references to profiles that do not exist yet.**
-      `default_print_profile: "0.20mm Standard @QIDI i-Fast"` (task 4) and
+- [ ] **`TODO(verify):` forward reference to a filament profile that does not exist yet.**
       `default_filament_profile: ["QIDI Generic PLA @QIDI i-Fast"]` (task 5). Harmless —
-      Orca falls back to another preset — but the names must match once those land.
+      Orca falls back to another preset — but the name must match once task 5 lands.
+      (`default_print_profile: "0.20mm Standard @QIDI i-Fast"` now resolves; task 4
+      shipped that preset under exactly that name.)
 
 ### Found by live-slicing against 2.4.2 (task 3 verification)
 
@@ -217,14 +244,11 @@ later tasks:
       `cool_plate_temp`, `eng_plate_temp`, `hot_plate_temp`, `supertack_plate_temp`,
       `textured_cool_plate_temp`, `textured_plate_temp` and each `*_initial_layer`
       to 80. Confirmed empirically — doing so produced `M140 S80` / `M190 S80`.
-- [ ] **`TODO(verify):` the CLI matches `compatible_printers` against the *inherited*
-      preset name.** `OrcaSlicer.cpp:2575`–`2596` compares
-      `new_print_compatible_printers[i] == new_printer_system_name`, i.e.
-      `"Qidi X-Max 0.4 nozzle"` — **not** `"QIDI i-Fast 0.4 nozzle"`. A process listing
-      only our printer is rejected with `-17 CLI_PROCESS_NOT_COMPATIBLE` even though the
-      GUI would accept it. Task 4 and the task-6 harness must account for this; decide
-      then between listing the base name too and using
-      `compatible_printers_condition`.
+- [x] **The CLI matches `compatible_printers` against the *inherited* preset name.**
+      Resolved by task 4 — see **Decided**. Each process profile lists both
+      `"QIDI i-Fast 0.4 nozzle"` and `"Qidi X-Max 0.4 nozzle"`. Reproduced empirically:
+      a flattened machine profile with `inherits` stripped makes `new_printer_system_name`
+      empty and the slice exits `-17 CLI_PROCESS_NOT_COMPATIBLE`.
 
 ### Known log noise: `Invalid T command (T1).`
 
@@ -261,6 +285,66 @@ them, and they must not be "fixed" by making the profile lie:
 - `;M105` — the commented temperature report in reference variants A and C, omitted.
 - `M104 T<old> S150` standby drop — omitted, already deferred to `ooze_prevention` below.
 - `G1 F1200 E8.5` prime after the `T` — omitted; see the 8.5 mm retract entry above.
+
+### From task 4 (the process profiles)
+
+- [ ] **`TODO(verify):` `initial_layer_print_height` `0.3` contradicts both the stock
+      bases and QIDI's ini.** All five `@Qidi XMax` profiles set it equal to their own
+      layer height (0.12 / 0.16 / 0.2 / 0.25 / 0.3); `PrusaSlicer_fast.ini` says
+      `first_layer_height = 0.35`. We take the reference G-code's 0.3 because it is the
+      authority and because the start block's hardcoded `Z0.3` prime line assumes it.
+      Affects first-layer adhesion and squish — check it on the first print.
+- [ ] **`TODO(verify):` the four non-0.20 variants have no reference G-code.** Only
+      0.2 mm is corroborated by QIDI Print output. The layer heights, speeds and line
+      widths of `0.12mm Fine`, `0.16mm Optimal`, `0.25mm Draft` and
+      `0.30mm Extra Draft` come from OrcaSlicer's stock legacy-QIDI profiles and are
+      unproven on this machine. `0.20mm Standard` is the one to print first.
+- [ ] **`TODO(verify):` `z_hop` 0.4 with `z_hop_types` `Auto Lift` has no counterpart in
+      the reference.** Carried from the base machine profile. Orca's spiral lift emits
+      interpolated Z values (`Z0.357143`, `Z0.414286`, …) between layers; QIDI Print
+      emits none — Z is constant across a layer in both references. Not changed here:
+      hard rule 6 carries base motion behaviour forward, and tuned retraction is out of
+      scope until after a first print. The task-6 harness will see these as diffs.
+
+### Found by task 4 — three defects in the task-3 machine profile
+
+All three were invisible to task 3 because the CLI does not resolve `inherits`, so the
+inherited keys never reached the slicer. They are visible in the GUI, which does resolve
+it. All three are fixed in `profiles/machine/QIDI i-Fast 0.4 nozzle.json`.
+
+- [x] **`before_layer_change_gcode: ""` — was a hard blocker.**
+      `fdm_machine_common` ships `";BEFORE_LAYER_CHANGE\n;[layer_z]\nG92 E0\n"`. With our
+      `use_relative_e_distances: "0"` OrcaSlicer refuses to slice at all:
+      `"G92 E0" was found in before_layer_change_gcode, which is incompatible with
+      absolute extruder addressing`, exit `-51`. Derived from the reference, which has
+      **no per-layer `G92 E0`** — every `G92` in `single-extruder.gcode` is in the start
+      block (lines 146–174) or the end block (`G92 E1`, line 3622), and neither file
+      contains `;BEFORE_LAYER_CHANGE`.
+- [x] **`time_lapse_gcode: ""` — output noise.** `fdm_machine_common` ships
+      `";TIMELAPSE_TAKE_FRAME\n"`, which OrcaSlicer emits once per layer **even with
+      `timelapse_type = 0`** (201 lines in a 20 mm test cube). Neither reference contains
+      the marker. Inert on a Marlin machine, but it would have shown up as a diff on
+      every layer in task 6.
+- [x] **A missing blank line in `machine_start_gcode`.** The reference has an empty line
+      between `G0 X5 F2400` and `M141 S0`; our string ran them together. With it restored,
+      a real slice reproduces the start block **exactly**, the only remaining diff being
+      the six temperature values — which come from the stock `Qidi Generic PLA` filament
+      and are task 5's to fix (`M140 S45` / `M104 T0 S210` against the reference's
+      `M140 S80` / `M104 T0 S200`).
+
+### Found by task 4 — the CLI does not resolve `inherits`
+
+- [ ] **`TODO(verify):` task 6's harness must flatten the preset chain before slicing.**
+      `--load-settings` reads each preset JSON raw: the `inherits`-handling branches in
+      the CLI's `load_config_file` are commented out
+      (`v2.4.2:src/OrcaSlicer.cpp:1953`–`2020`, see `:1987` and `:1991`), and any key
+      absent from the file falls back to OrcaSlicer's built-in FFF default when
+      `m_print_config.apply(fff_print_config, true)` runs at `:3629`. A thin preset
+      therefore slices correctly in the GUI and silently loses every inherited QIDI value
+      from the CLI. Passing the base preset as a second process file is not a workaround —
+      the CLI rejects a duplicate process config (`:2074`). The flattener must **keep**
+      the `inherits` key in its output: the CLI derives `new_printer_system_name` from it
+      (`:2045`), and stripping it makes the compatibility check fail with `-17`.
 
 ### From task 2 (the reference G-code extraction)
 

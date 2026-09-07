@@ -1,0 +1,14 @@
+{
+	"type": "process",
+	"name": "0.20mm Standard @QIDI i-Fast",
+	"inherits": "0.20mm Standard @Qidi XMax",
+	"from": "User",
+	"instantiation": "true",
+	"version": "02.04.00.06",
+	"initial_layer_print_height": "0.3",
+	"enable_prime_tower": "0",
+	"compatible_printers": [
+		"QIDI i-Fast 0.4 nozzle",
+		"Qidi X-Max 0.4 nozzle"
+	]
+}
