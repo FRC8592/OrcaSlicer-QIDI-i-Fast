@@ -6,8 +6,8 @@ see the "derive, don't invent" rule in [`CLAUDE.md`](CLAUDE.md).
 
 ## Next steps
 
-Handoff tasks, with current state. Task 1 is partly done (results in `CLAUDE.md`);
-nothing else has been started.
+Handoff tasks, with current state. Tasks 1–5 are done; validation (6) and packaging (7)
+remain.
 
 - [x] **1. Recon the schema** — machine/process inherits chains, legacy-vs-Klipper
       machine inventory, user config dir, and the base-profile choice are recorded in
@@ -50,8 +50,18 @@ nothing else has been started.
       All five verified by CLI slice: exit 0, first layer at `Z0.3` over their own
       pitch, no prime tower. Three machine-profile defects were found and fixed in the
       process — see **Found by task 4** below.
-- [ ] **5. Filament profile** — one generic PLA inheriting Orca's generic PLA, temps
-      from QIDI's reference profile, bed 80 °C (see above).
+- [x] **5. Filament profile** — `profiles/filament/QIDI Generic PLA @QIDI i-Fast.json`,
+      a thin override of the stock `Qidi Generic PLA`. Five things change: nozzle 200 °C
+      (both `nozzle_temperature` and `nozzle_temperature_initial_layer`), **all twelve**
+      plate-temp keys to 80 °C, `enable_pressure_advance` `0`, and a `compatible_printers`
+      list naming both printers. Everything else — diameter, type, flow, fan curve,
+      volumetric limit — is inherited, per the handoff's "resist a full material library".
+      Verified by CLI slice against 2.4.2: exit 0, the **end block is byte-identical** to
+      `single-extruder.gcode`, and the start block differs only in the two *commented-out*
+      `;M104 T1 S…` / `;M109 T1 S…` lines (200 here, 230 in the reference, whose second
+      slot held PETG — comments the machine ignores). Zero `M900`, zero `M106 P3`.
+      One machine-profile defect was found and fixed in the process — see
+      **Found by task 5** below.
 - [ ] **6. Validate** — derive the Orca CLI invocation from `--help` and the repo docs
       (do not assume flag names). Slice a test model, diff against the reference
       ignoring coordinates and comments, report every difference in the start block,
@@ -70,6 +80,10 @@ nothing else has been started.
       note here claimed the answer sets one. The real temperature ceiling is the
       filament-side `nozzle_temperature_range_high`, so this question lands on task 5,
       not the machine profile. `nozzle_type` only affects abrasion warnings.)
+      **Task 5 does not settle it and does not need to:** the PLA profile inherits
+      `nozzle_temperature_range_high` `240`, far below either head's rating, so PLA
+      cannot tell the two apart. The answer only starts to matter when a material above
+      240 °C is added.
 - [ ] **Are any non-0.4 nozzles on hand?** See "Nozzle sizes" below. Not blocking.
 
 ## Decided
@@ -166,6 +180,28 @@ nothing else has been started.
       `Qidi X-Max.json`, `0.20mm Standard @Qidi XMax`) is byte-identical to the
       `v2.4.2` tag.
 
+- [x] **Filament profile: one preset, `QIDI Generic PLA @QIDI i-Fast`** (2026-09-07),
+      inheriting `Qidi Generic PLA` → `fdm_filament_pla` → `fdm_filament_common`. Five
+      overrides only. Per the handoff: "Resist producing a full material library — that's
+      tuning work that belongs after the machine is proven."
+- [x] **Nozzle 200 °C, first layer and body alike.** Two independent sources agree:
+      `M104 T0 S200` / `M109 T0 S200` in both references, and
+      `temperature = 200` / `first_layer_temperature = 200` in `PrusaSlicer_fast.ini`.
+      The single reference's one mid-print `M104 S200` re-asserts the same value, so
+      there is no first-layer/body split to reproduce.
+- [x] **`enable_pressure_advance: ["0"]`.** The parent ships `1` with
+      `pressure_advance: 0.031`, which on a `marlin` flavor emits `M900 K0.031`
+      (`v2.4.2:GCodeWriter.cpp:388`–`389`). There is **no `M900` anywhere** in either
+      reference export, in `PrusaSlicer_fast.ini`, or in the Simplify3D `.fff` — so the
+      0.031 has no i-Fast provenance, and the handoff puts pressure advance out of scope
+      until after a first print. `pressure_advance` itself is left inherited (unused) so
+      the number survives for later tuning. See the `TODO(verify)` below.
+- [x] **Fan settings stay inherited.** `fdm_filament_pla` gives
+      `close_fan_the_first_x_layers` `1` and `full_fan_speed_layer` `3`, close to but not
+      equal to the reference's off/50 %/100 % ramp over layers 0–2. §7 of the extraction
+      already ruled QIDI Print's per-extruder, per-layer Cura fan curve out of scope for a
+      single-PLA profile. Recorded as an accepted diff below rather than reverse-engineered.
+
 ## Nozzle sizes — what adding more would take
 
 Machine-side is trivial: a per-nozzle profile is a ~15-key file that `inherits` the 0.4
@@ -214,11 +250,9 @@ _Populated as profiles are written._
 - [ ] **`TODO(verify):` `nozzle_type: ["brass","brass"]` assumes the standard head.**
       Follows the handoff's "assume the standard head" instruction, not a measurement.
       See the open head-assembly question above. Only affects Orca's abrasion warnings.
-- [ ] **`TODO(verify):` forward reference to a filament profile that does not exist yet.**
-      `default_filament_profile: ["QIDI Generic PLA @QIDI i-Fast"]` (task 5). Harmless —
-      Orca falls back to another preset — but the name must match once task 5 lands.
-      (`default_print_profile: "0.20mm Standard @QIDI i-Fast"` now resolves; task 4
-      shipped that preset under exactly that name.)
+- [x] **Resolved: `default_filament_profile` now points at a preset that exists.**
+      `["QIDI Generic PLA @QIDI i-Fast"]` — task 5 shipped the filament preset under
+      exactly that name, so both `default_*_profile` forward references resolve.
 
 ### Found by live-slicing against 2.4.2 (task 3 verification)
 
@@ -235,7 +269,7 @@ later tasks:
       with `atoi`, *not* the `s_keys_map_BedType` name map, so the string
       `"High Temp Plate"` logs `default_bed_type: invalid bed type` on every load. It
       falls back to `btPEI` either way, so this is explicitness, not a behaviour change.
-- [ ] **`TODO(verify):` task 5 must set *every* plate-temp variant to 80 °C.**
+- [x] **Resolved by task 5: *every* plate-temp variant is set to 80 °C.**
       `curr_bed_type` defaults to **`btPC` (Cool Plate)**
       (`v2.4.2:PrintConfig.cpp:1080`+), and `default_bed_type` is only read by the GUI
       (`Plater.cpp:2524`–`2538`) — the **CLI never consults it**. So a filament that sets
@@ -244,6 +278,7 @@ later tasks:
       `cool_plate_temp`, `eng_plate_temp`, `hot_plate_temp`, `supertack_plate_temp`,
       `textured_cool_plate_temp`, `textured_plate_temp` and each `*_initial_layer`
       to 80. Confirmed empirically — doing so produced `M140 S80` / `M190 S80`.
+      All twelve keys are in the shipped filament profile.
 - [x] **The CLI matches `compatible_printers` against the *inherited* preset name.**
       Resolved by task 4 — see **Decided**. Each process profile lists both
       `"QIDI i-Fast 0.4 nozzle"` and `"Qidi X-Max 0.4 nozzle"`. Reproduced empirically:
@@ -285,6 +320,16 @@ them, and they must not be "fixed" by making the profile lie:
 - `;M105` — the commented temperature report in reference variants A and C, omitted.
 - `M104 T<old> S150` standby drop — omitted, already deferred to `ooze_prevention` below.
 - `G1 F1200 E8.5` prime after the `T` — omitted; see the 8.5 mm retract entry above.
+
+Introduced by task 5:
+
+- **Fan ramp.** Reference: `M107` on layer 0, `M106 S127.5` (50 %) on layer 1,
+  `M106 S255` (100 %) on layer 2. Ours: OrcaSlicer's own ramp from
+  `close_fan_the_first_x_layers` `1` and `full_fan_speed_layer` `3`. Same shape, different
+  numbers. Deliberate — see **Decided**.
+- **`M900` absent.** The reference has none and neither do we, but note that this is a
+  *deviation from the stock `Qidi Generic PLA`*, not from the reference. Task 6 should
+  confirm zero `M900` rather than treat its absence as untested.
 
 ### From task 4 (the process profiles)
 
@@ -345,6 +390,82 @@ it. All three are fixed in `profiles/machine/QIDI i-Fast 0.4 nozzle.json`.
       the CLI rejects a duplicate process config (`:2074`). The flattener must **keep**
       the `inherits` key in its output: the CLI derives `new_printer_system_name` from it
       (`:2045`), and stripping it makes the compatibility check fail with `-17`.
+
+### From task 5 (the filament profile)
+
+- [ ] **`TODO(verify):` pressure advance is switched off, against the stock preset.**
+      `enable_pressure_advance: ["0"]`. The stock `Qidi Generic PLA` — which *is* declared
+      compatible with the legacy `Qidi X-Max 0.4 nozzle` — enables it at `K0.031`, so
+      OrcaSlicer's own vendor believes a legacy QIDI board accepts `M900`. We disable it
+      because no QIDI i-Fast source emits `M900` and because PA is explicitly out of scope
+      per the handoff. Two things to check after a first print: whether the Chitu board
+      actually implements `M900`, and whether 0.031 is anywhere near right for this
+      extruder. Turning it back on is a one-key change.
+- [ ] **`TODO(verify):` `filament_flow_ratio` `0.98` is inherited and contradicts QIDI.**
+      `PrusaSlicer_fast.ini` says `extrusion_multiplier = 1,1`. Both are sourced values,
+      so neither is an invention; we keep the inherited 0.98 because the handoff scopes
+      flow calibration out until after a first print. Worth 2 % of extrusion — check it
+      on the first print before tuning anything else.
+- [ ] **`TODO(verify):` the fan curve is OrcaSlicer's, not QIDI's.** See **Decided** and
+      the accepted-diffs list. Affects overhangs and bridging on PLA.
+- [ ] **`TODO(verify):` bed 80 °C is high for PLA.** It is what QIDI Print emits on this
+      machine for both PLA and PLA + PETG (see `CLAUDE.md`), and G-code beats the ini's
+      60 °C by rule — but 80 °C is at the top of the usual PLA range and elephant's foot
+      is the thing to watch on the first print. `PrusaSlicer_fast.ini`'s 60 °C is the
+      dissenting source.
+
+### Found by task 5 — one defect in the machine profile
+
+- [x] **`support_air_filtration: "0"` added to the machine profile.** Without it, a slice
+      *with any QIDI filament preset* emits two lines the reference does not have:
+      `M106 P3 S255` after the start block and `M106 P3 S0` **after `;End of Gcode`**.
+      Chain: the Qidi bundle's `fdm_filament_common` sets `activate_air_filtration: "1"`;
+      `activate_air_filtration_during_print` defaults to `true`
+      (`v2.4.2:PrintConfig.cpp:1893`–`1897`); and the emission
+      (`GCode.cpp:3181`–`3197`, `:3501`–`:3514`) is gated only on the **machine** key
+      `support_air_filtration`, which is **absent from the whole QIDI machine chain** and
+      defaults to `true` (`PrintConfig.cpp:3899`–`3903`). Neither reference contains any
+      `M106 P<n>` and no QIDI i-Fast profile documents a slicer-driven exhaust fan.
+      Fixed machine-side, not filament-side, because it is a machine capability — this way
+      a *stock* QIDI filament selected against the i-Fast cannot re-introduce the lines.
+      Tasks 3 and 4 could not have caught it: they sliced with no filament preset, where
+      `activate_air_filtration` falls back to OrcaSlicer's built-in `false`
+      (`PrintConfig.cpp:1886`–`1890`). Any GUI use would have hit it on the first slice.
+      **This weakens task 3's "end block byte-identical" claim as it stood** — that was
+      true of a filament-less CLI slice only. It is true again now, with the filament
+      preset loaded and this key set (re-verified 2026-09-07).
+
+### Found by task 5 — `M201`/`M203`/`M204`/`M205`, not yet decided
+
+- [ ] **`TODO(verify):` OrcaSlicer emits four machine-limit M-codes the reference has not.**
+      Immediately before the start block every slice writes
+      `M201 X9000 Y9000 Z500 E5000`, `M203 X500 Y500 Z12 E120`, `M204 P1500 R1500 T1500`
+      and `M205 X10.00 Y10.00 Z0.20 E2.50`. The *values* are fine — they are the base
+      profile's `machine_max_*`, which match `PrusaSlicer_fast.ini` exactly (see the
+      `machine_max_acceleration_e` entry above for the one exception). What is undecided
+      is whether they should be **emitted at all**: QIDI Print writes none of them, so the
+      i-Fast prints today with whatever the firmware has stored. `machine_limits_usage`
+      is absent from our profile and from the whole QIDI chain, so Orca's default
+      ("emit to G-code") applies; setting it to time-estimate-only would suppress them.
+      Left alone deliberately — this is a machine-profile question with a real argument
+      either way, and the lines are standard Marlin, not QIDI-specific. **Ask the user
+      before changing it** (rule 8: the machine is in front of them). Task 6 must report
+      these four lines as a diff.
+
+### Found by task 5 — two more CLI flattener requirements
+
+- [ ] **`TODO(verify):` the task-6 flattener must keep `from`, and use `--load-filaments`.**
+      Two additions to the task-4 finding below. `from` is **mandatory** in every
+      `--load-settings` file and must be `system`, `User` or `user`; stripping it exits
+      `-5` with `file <x>'s from  unsupported` (`v2.4.2:src/OrcaSlicer.cpp:1975`–`1979`).
+      A filament preset goes on `--load-filaments`, not `--load-settings`, and its
+      `filament_id` is read from the same key-value map (`:1993`–`1995`), so keep that too.
+      The invocation that verified task 5:
+      ```bash
+      flatpak run com.orcaslicer.OrcaSlicer \
+        --load-settings "machine.json;process.json" --load-filaments "filament.json" \
+        --slice 0 --export-3mf out.gcode.3mf --outputdir . cube20.stl
+      ```
 
 ### From task 2 (the reference G-code extraction)
 

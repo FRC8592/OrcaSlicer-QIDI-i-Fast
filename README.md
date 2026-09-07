@@ -1,11 +1,11 @@
 # QIDI i-Fast — OrcaSlicer profile
 
-> **Status: machine and process profiles written and slice-tested against OrcaSlicer
-> 2.4.2.** A real single-extruder slice emits an end block byte-identical to the QIDI
-> Print reference and a start block identical apart from six temperature values, which
-> come from the stock filament preset and land in task 5. The filament profile (task 5)
-> and the validation harness (task 6) are still to come; the tool-change block is derived
-> from source but not yet executed. See
+> **Status: machine, process and filament profiles written and slice-tested against
+> OrcaSlicer 2.4.2.** A real single-extruder slice now emits an end block **byte-identical**
+> to the QIDI Print reference and a start block identical apart from two *commented-out*
+> `T1` temperature lines, whose value tracks whatever filament sits in extruder 2. The
+> validation harness (task 6) is still to come; the tool-change block is derived from
+> source but not yet executed. See
 > [`TODO.md`](TODO.md) for every unverified value and
 > [`ifast-orca-profile-handoff.md`](ifast-orca-profile-handoff.md) for the spec.
 
@@ -29,7 +29,8 @@ directory depends on how OrcaSlicer was installed:**
 ```bash
 ORCA=~/.var/app/com.orcaslicer.OrcaSlicer/config/OrcaSlicer/user/default   # flatpak
 cp "profiles/machine/QIDI i-Fast 0.4 nozzle.json" "$ORCA/machine/"
-cp profiles/process/*.json "$ORCA/process/"
+cp profiles/process/*.json  "$ORCA/process/"
+cp profiles/filament/*.json "$ORCA/filament/"
 ```
 
 **Before the profile will load**, the QIDI vendor must be installed in OrcaSlicer, because
@@ -121,9 +122,9 @@ The GUI does resolve it, so both would have bitten on first use.
 
 **Bed temperature is 80 °C**, from `M140 S80` / `M190 S80` in both references. This
 contradicts `PrusaSlicer_fast.ini`, which says 60 °C; the G-code is ground truth. The value
-itself is a *filament* property in Orca (`hot_plate_temp`), so it lands in the filament
-profile (task 5), not here. Both references emit the same 80 °C with PLA alone and with
-PLA + PETG, so it is not a material-specific number.
+itself is a *filament* property in Orca (`hot_plate_temp`), so it lives in the filament
+profile, not here — see [Filament profile](#filament-profile). Both references emit the
+same 80 °C with PLA alone and with PLA + PETG, so it is not a material-specific number.
 
 ## Process profiles
 
@@ -174,6 +175,72 @@ matches `new_printer_system_name`, which is the machine preset's ***`inherits`**
 the CLI never evaluates it. The side effect is that these presets also show up under the
 stock `Qidi X-Max 0.4 nozzle` printer in the GUI.
 
+## Filament profile
+
+One preset: **`QIDI Generic PLA @QIDI i-Fast`**, inheriting
+`Qidi Generic PLA` → `fdm_filament_pla` → `fdm_filament_common` from the `v2.4.2` Qidi
+bundle. Deliberately minimal, per the handoff — flow ratio, retraction and per-material
+tuning belong after a first successful print, not here.
+
+| Key | Value | Source |
+|---|---|---|
+| `nozzle_temperature_initial_layer` | `200` | `M104 T0 S200` / `M109 T0 S200` in both references; `first_layer_temperature = 200` in `PrusaSlicer_fast.ini` |
+| `nozzle_temperature` | `200` | `temperature = 200` in `PrusaSlicer_fast.ini`; the single reference never leaves 200 °C (its one mid-print `M104 S200` re-asserts the same value) |
+| every `*_plate_temp` and `*_plate_temp_initial_layer` | `80` | `M140 S80` / `M190 S80` in both references |
+| `enable_pressure_advance` | `0` | No `M900` in either reference, in `PrusaSlicer_fast.ini`, or in the Simplify3D `.fff` |
+| `compatible_printers` | both printer names | Same two code paths as the process profiles |
+
+Everything else is inherited, including `filament_diameter` `1.75` (which matches
+`filament_diameter = 1.75,1.75` in the ini) and `filament_type` `PLA`.
+
+**All twelve plate-temperature keys are set, not just `hot_plate_temp`.** The machine
+profile declares `default_bed_type: "3"` (High Temp Plate), but that key is read *only by
+the GUI* (`v2.4.2:Plater.cpp:2524`–`2538`); the CLI's `curr_bed_type` falls back to Cool
+Plate (`PrintConfig.cpp:1080`+). Setting only `hot_plate_temp*` therefore slices at
+`M140 S45` from the CLI and 80 °C from the GUI. The i-Fast has one physical bed, so every
+variant — `cool_plate_temp`, `textured_cool_plate_temp`, `eng_plate_temp`,
+`hot_plate_temp`, `textured_plate_temp`, `supertack_plate_temp` and each
+`*_initial_layer` — is 80. Confirmed empirically: the slice emits `M140 S80` / `M190 S80`.
+
+**Pressure advance is off.** The parent `Qidi Generic PLA` ships
+`enable_pressure_advance: 1` with `pressure_advance: 0.031`, which on a `marlin` flavor
+makes OrcaSlicer emit `M900 K0.031` (`v2.4.2:GCodeWriter.cpp:388`–`389`). Neither
+reference export contains an `M900`, and neither does any of QIDI's published i-Fast
+profiles — the 0.031 is an Orca vendor value with no i-Fast provenance, and the handoff
+puts pressure advance out of scope until after a first print. `pressure_advance` itself is
+left inherited so the number survives for later tuning; it is simply unused. Recorded in
+`TODO.md`.
+
+**Fan settings are inherited, not derived.** `close_fan_the_first_x_layers` `1` and
+`full_fan_speed_layer` `3` from `fdm_filament_pla` produce a ramp close to but not equal to
+the reference's (fan off on layer 0, 50 % on layer 1, 100 % on layer 2). QIDI Print's fan
+curve is Cura's and is per-extruder and per-layer, so §7 of
+[`reference/extracted-gcode.md`](reference/extracted-gcode.md) rules it out of scope for a
+single-PLA profile. Task 6 will report the difference rather than hide it.
+
+### `support_air_filtration: "0"` — a machine key the filament profile forced out
+
+Adding a filament preset exposed a defect in the machine profile, fixed here. The Qidi
+bundle's `fdm_filament_common` sets `activate_air_filtration: "1"`, and
+`activate_air_filtration_during_print` defaults to `true`
+(`v2.4.2:PrintConfig.cpp:1893`–`1897`). The emission is then gated only on the *machine*
+key `support_air_filtration`, which is **absent from the entire QIDI machine chain** and
+whose built-in default is `true` (`:3899`–`3903`). The result was two lines the reference
+does not have:
+
+```gcode
+M106 P3 S255     ; injected after the start block
+M106 P3 S0       ; injected *after* ;End of Gcode
+```
+
+Neither reference contains any `M106 P<n>`, and no QIDI i-Fast profile documents a
+slicer-controlled exhaust fan, so `support_air_filtration: "0"` goes in the machine
+profile. Machine-side rather than filament-side deliberately: it is a machine capability,
+and this way a stock QIDI filament preset selected against the i-Fast cannot re-introduce
+the lines. Tasks 3 and 4 could not have seen this — they sliced without a filament preset,
+where `activate_air_filtration` falls back to OrcaSlicer's built-in `false` (`:1886`–`:1890`)
+— but any GUI use would have hit it immediately.
+
 ### Slicing from the CLI needs a flattened preset
 
 OrcaSlicer's CLI reads each `--load-settings` file **raw and does not resolve `inherits`**
@@ -183,6 +250,18 @@ therefore correct in the GUI but loses every inherited QIDI value from the CLI, 
 Passing the base as a second process file does not help — a duplicate process config is an
 error (`:2074`). The task-6 harness flattens the chain itself, keeping the `inherits` key
 in its output because the CLI derives `new_printer_system_name` from it.
+
+Two more keys the flattener must **keep**, both learned the hard way: `from`, which is
+mandatory and must be `system`, `User` or `user` or the CLI exits `-5` with
+`file <x>'s from  unsupported` (`:1975`–`:1979`); and, for a filament preset, `filament_id`
+(`:1993`–`:1995`). The filament preset also goes on `--load-filaments`, not
+`--load-settings`. The invocation that verified this profile:
+
+```bash
+flatpak run com.orcaslicer.OrcaSlicer \
+  --load-settings "machine.json;process.json" --load-filaments "filament.json" \
+  --slice 0 --export-3mf out.gcode.3mf --outputdir . cube20.stl
+```
 
 This only affects command-line slicing. **Nothing about normal GUI use requires it.**
 
@@ -198,6 +277,9 @@ This only affects command-line slicing. **Nothing about normal GUI use requires 
   **Caveat:** `default_bed_type` is read only by the GUI; the CLI's `curr_bed_type`
   defaults to Cool Plate. The filament profile therefore has to set *every* plate-temp
   variant to 80 °C or GUI and CLI slices will disagree — see `TODO.md`.
+- **`support_air_filtration: "0"`** — otherwise `M106 P3 S255` is injected after the start
+  block and `M106 P3 S0` after `;End of Gcode`. See
+  [the section above](#support_air_filtration-0--a-machine-key-the-filament-profile-forced-out).
 
 ### One expected error in the log
 

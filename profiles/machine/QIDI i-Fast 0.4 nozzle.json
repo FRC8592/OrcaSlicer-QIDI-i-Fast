@@ -37,6 +37,7 @@
 		"brass"
 	],
 	"auxiliary_fan": "0",
+	"support_air_filtration": "0",
 	"machine_max_acceleration_e": [
 		"5000",
 		"5000"
