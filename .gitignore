@@ -1,0 +1,13 @@
+# JetBrains
+/.idea/
+*.iml
+
+# Validation output (task 6) — regenerated, never reviewed by hand
+/out/
+*.gcode.gz
+scripts/**/tmp/
+
+# OS / editor cruft
+.DS_Store
+*~
+*.swp
