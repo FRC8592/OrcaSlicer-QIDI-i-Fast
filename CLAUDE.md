@@ -97,8 +97,8 @@ things in the slicer:
 Points 3 and 4 line up with what the reference G-code actually does — QIDI Print puts
 `G92 E0`, `M109`, `M106` and the prime in the tool-change block — so SEMM `0` plus a
 verbatim `change_filament_gcode` reproduces it. Related: `ooze_prevention` is only
-supported with SEMM off (`Print.cpp:1522`), and we want it off anyway, since the
-firmware's auto-lift already handles the idle head.
+supported with SEMM off (`Print.cpp:1522`) — and we do want it eventually, since the
+reference drops the idle nozzle to 150 °C. See "Standby / idle nozzle temperature" below.
 
 **Nozzle sizes.** Ship **0.4 only.** It is the sole nozzle QIDI documents for the
 i-Fast (`PrusaSlicer_fast.ini`: `nozzle_diameter = 0.4,0.4`), and process values for
@@ -160,6 +160,61 @@ Write the full verbatim extraction to `reference/extracted-gcode.md` (task 2).
 
 Note a conflict, **resolved in favour of the G-code**: this ini says bed 60 °C, but the
 reference emits `M140 S80`. Use 80 °C and record the discrepancy in `README.md`.
+
+### Bed temperature and the mixed-material reference
+
+The dual file prints **PLA on T0 and PETG on T1** (`M104 T0 S200` / `M104 T1 S230`), so
+it is fair to ask whether its bed temperature is a PLA number or a PETG number. It is
+neither — it is the same number:
+
+| File | Materials | Bed |
+|---|---|---|
+| `single-extruder.gcode` | PLA | `M140 S80` / `M190 S80` |
+| `dual-extruder.gcode` | PLA + PETG | `M140 S80` / `M190 S80` |
+
+Four bed commands per file, all of them in the start block or the shutdown block. The
+bed is **never changed mid-print**, and adding PETG did not move it. So 80 °C is not
+"QIDI's PLA bed temp" — it is what QIDI Print asks for on this machine either way, and
+it is safe to carry into a PLA-only profile.
+
+That said, **bed temperature is a filament property in Orca**, not a machine or process
+one — `hot_plate_temp` and `hot_plate_temp_initial_layer` (`PrintConfig.cpp:1169`, `1223`),
+keyed per bed type. It therefore lives in our generic PLA filament profile, not the
+machine profile. Two consequences once a second material is added:
+
+- The print-level enum **`bed_temperature_formula`** decides what a mixed job emits:
+  `by_highest_temp` (the **default**, `PrintConfig.cpp` / `GCode.cpp:3531`) takes the max
+  across the filaments in the job; `by_first_filament` takes the first extruder's
+  (`GCode.cpp:3533`). If every i-Fast filament profile we write says 80, both formulas
+  agree and the reference is reproduced either way. Keep it that way unless there is a
+  reason not to.
+- The start G-code must use the **scalar** placeholder `bed_temperature_initial_layer_single`
+  (`GCode.cpp:3538`), which is the resolved single value. The X-CF Pro base start G-code
+  uses the vector `[hot_plate_temp_initial_layer]`, which is per-filament and is the wrong
+  shape for a two-extruder machine emitting one `M140`.
+
+### Standby / idle nozzle temperature — the reference does this
+
+The dual file drops the inactive hotend and ramps it back before use:
+
+```gcode
+M104 T0 S150     ; T0 parked -> standby
+M104 T0 S168.3   ; interpolated preheat back up
+M104 T0 S200     ; back to print temp
+```
+
+Orca's equivalent is **`ooze_prevention`** (print setting, "drop the temperature of the
+inactive extruders"), with the target from the filament's `idle_temperature`, or from
+`standby_temperature_delta` when `idle_temperature` is 0. The ramp is `preheat_time`.
+
+**This corrects an earlier note in this file's history:** ooze prevention should be
+*enabled*, not disabled, if we want to match the reference. It is not a substitute for
+the firmware auto-lift — that is separate and stays untouched — it is the temperature
+half of the same idea. Conveniently it is only supported with SEMM **off**
+(`Print.cpp:1522`), which is what we are already doing.
+
+Deferred, though: the handoff scopes the first profile to one PLA filament, where an
+idle extruder never happens. Enable and tune it when the second material lands.
 
 Other `.ini` files here (`_max`, `_plus`, `_pro`, `_cf_pro`, `_maker`, `_mates`) are
 sibling machines — useful for cross-checking, not for sourcing i-Fast values.
