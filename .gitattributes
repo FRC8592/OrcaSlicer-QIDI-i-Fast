@@ -2,5 +2,8 @@
 # Never let Git rewrite line endings here — the G-code must stay byte-exact.
 reference/** -text -diff
 
+# ...but our own commentary in reference/ is ordinary text and must stay diffable.
+reference/*.md text eol=lf diff
+
 # Profile JSONs are ours; normalise them.
 profiles/**/*.json text eol=lf

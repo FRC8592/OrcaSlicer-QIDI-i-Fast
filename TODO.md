@@ -16,15 +16,32 @@ nothing else has been started.
       Still owed: the *flattened* key list for the X-CF Pro chain, and confirmation of
       exactly which fields Orca requires before it will load a user profile without
       silently rejecting it.
-- [ ] **2. Extract ground truth → `reference/extracted-gcode.md`** — verbatim start
-      block, end block, chamber commands, heating order, every QIDI-specific M-code
-      explained, and the full tool-change sequence from the dual file. Much of this is
-      already summarised in `CLAUDE.md`; this task is to write it out *verbatim* with
-      commentary. **This is the natural next task.**
+- [x] **2. Extract ground truth → [`reference/extracted-gcode.md`](reference/extracted-gcode.md)**
+      — done. Verbatim start block, end block, chamber commands, heating order, M-code
+      glossary, the full 3-variant tool-change taxonomy, and a mapping onto Orca's
+      settings. Every quoted block is reproducible with the `sed` command beside it and
+      was re-verified byte-for-byte. The extraction **contradicted five claims** that
+      `CLAUDE.md` had recorded from an earlier pass (prime-line `B` value, the
+      "prime before the `T`" reading, one-vs-three tool-change variants, the length of
+      the end block, and the `[hot_plate_temp_initial_layer]` placeholder name);
+      `CLAUDE.md` has been corrected and §9 of the extraction lists them.
 - [ ] **3. Machine profile** — from the X-CF Pro base: 330×250×320, two extruders as
       multi-tool (`single_extruder_multi_material: "0"` + `nozzle_diameter: ["0.4","0.4"]`),
       zero extruder offsets, motion limits carried over unchanged, and the step-2 blocks
       as `machine_start_gcode` / `machine_end_gcode` / `change_filament_gcode`.
+      Three decisions task 2 surfaced and deliberately did **not** make:
+      - **Prime-line `B` value.** `B19` when T1 carries filament, `B0` when it does not.
+        A constant is wrong for one of the two cases — either purging 19 mm out of an
+        unloaded hotend, or failing to prime a loaded one. Needs a conditional on the
+        filament count, or a fixed choice recorded as a known limitation.
+      - **Blocking vs non-blocking tool change.** The reference uses `M109 S200` when
+        selecting T0 and a non-blocking `M104 T0 S<ramp>` when selecting T1. One
+        `change_filament_gcode` string cannot be both. Recommend the blocking form —
+        it is the safe direction, and the non-blocking variant only exists because Cura
+        knew the tool was already hot.
+      - **`use_relative_e_distances` must be `0`.** The reference is absolute-E (`M82`);
+        the X-CF Pro base start G-code emits `M83`. Carrying the base setting forward
+        would leave the header and the moves disagreeing.
 - [ ] **4. Process profile** — 0.20 mm standard, inheriting from
       `0.20mm Standard @Qidi XCFPro`. Add 0.15/0.30 only if trivial. Do **not** import
       speeds from QIDI's Cura profile.
@@ -89,3 +106,27 @@ Revisit once 0.4 has produced a good print.
 ## Unverified profile values
 
 _Populated as profiles are written._
+
+### From task 2 (the reference G-code extraction)
+
+- [ ] **`TODO(verify):` `M106 T-2 S255` / `M107 T-2` — which fan is `T-2`?** `-2` is not a
+      valid extruder index. Both occurrences sit at a `;TIME_ELAPSED` boundary (end of
+      layer 0, and the shutdown block), so it is not a per-tool part-cooling fan.
+      Candidates are the chamber circulation fan and the auxiliary/side fan. **Do not
+      guess** — the user has the machine. Matters because if it is the chamber fan, an
+      Orca profile that never emits it will run the enclosure differently from QIDI Print.
+- [ ] **`TODO(verify):` `M4010` payload encoding.** `M4010 X<w> Y<h>` followed by
+      `M4010 I<offset> T<length> '<hex>'` chunks — a preview bitmap for the display
+      (186×186 single, 304×304 dual). Undocumented. Orca cannot emit it. Cosmetic, but
+      confirm the printer does not sulk without a preview.
+- [ ] **`TODO(verify):` does `M2100 T<seconds>` matter?** Print-time estimate handed to
+      the display; matches the `;TIME:` comment exactly. Orca has no equivalent. Confirm
+      whether the i-Fast's "time remaining" readout misbehaves without it.
+- [ ] **`TODO(verify):` `preheat_time` vs Cura's ramp.** The reference preheats the parked
+      hotend ~107 lines before the tool change (`M104 T0 S200`), with interpolated
+      intermediate setpoints (`S168.3`, `S155.4`). Orca's `preheat_time` is a different
+      model and will not reproduce those values. Only bites once a second material exists.
+- [ ] **`TODO(verify):` chamber heater is never used.** Both references emit only
+      `M141 S0` and no `M191`. The i-Fast has an actively heated chamber; QIDI Print
+      simply does not drive it in these exports. Out of scope per the handoff, noted so
+      nobody reads `M141 S0` as "the machine has no chamber heater".

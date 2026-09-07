@@ -124,28 +124,48 @@ silently rejects malformed profiles.
 `reference/single-extruder.gcode` and `reference/dual-extruder.gcode` are **the
 authority on machine behavior**. Use their blocks verbatim. Do not tidy them.
 
-Key facts already established:
+**The full verbatim extraction lives in
+[`reference/extracted-gcode.md`](reference/extracted-gcode.md) (task 2, done).** That file
+is the authority; the notes below are an index into it, not a substitute. Every block there
+is reproducible with the `sed` command quoted beside it, and all of them were re-verified
+byte-for-byte against the sources.
 
-- Exported by **`Cura_SteamEngine 4.9.1`** (QIDI Print is Cura-derived), `;FLAVOR:Marlin`
+Headlines:
+
+- Exported by **`Cura_SteamEngine 4.9.1`** (QIDI Print is Cura-derived), `;FLAVOR:Marlin`,
+  CRLF. Single: 3628 lines, `M4010` thumbnail on 1-131, G-code header from 132.
+  Dual: 11411 lines, thumbnail on 1-458, header from 459, plus a `;SETTING_3` Cura trailer.
+- **The reference is absolute-E.** `M82` in the start block and every extrusion move
+  carries an absolute `E` (1855 moves single, 7802 dual). The X-CF Pro base start G-code
+  emits `M83` — relative. So `use_relative_e_distances` must be `0`.
 - **`A`/`B` axes appear only in the start block, and only for the prime line.** All
-  5 occurrences in each file sit inside the start G-code (`G92 A0 B0`, `G1 X330 B19 F2400`,
-  `G1 X5 A19 F2400`); the print body uses plain `E` throughout (1,855 `E` moves in the
-  single file, 7,900 in the dual), and so does the tool change. `A` is extruder 0's axis
-  and `B` is extruder 1's, which lets QIDI Print prime both hotends without a tool change.
-  Since we paste the start block in verbatim, **this needs no special handling** — Orca
-  emits `E` for the body, matching the reference.
+  5 occurrences per file are in the start G-code; the body and the tool change use plain
+  `E`. `A` is extruder 0's axis, `B` is extruder 1's, which lets QIDI Print prime both
+  hotends without a tool change. **But the `B` value is not constant** — `B19` in the dual
+  file, `B0` in the single, tracking whether T1 carries filament. A hardcoded start block
+  is wrong for one of the two cases; task 3 has to decide. (An earlier note here claimed
+  `B19` unconditionally and that no special handling was needed. That was wrong.)
 - M-codes in play: `G0 G1 G28 G92 M82 M84 M104 M106 M107 M109 M140 M141 M190 M2100 M4010`
-  - `M4010` — QIDI thumbnail/preview blob (131 lines of it precede the start block)
-  - `M2100 T<seconds>` — print time estimate
-  - `M141 S<n>` — chamber heater (reference sets `M141 S0`)
-- Heating order in the start block: `M140 S80` → `M104 T0 S200` → `M190 S80` → `M109 T0 S200`
-- Prime line runs the full X width (`X330`) using both tools
-- End block: `M107` / `M140 S0` / `M104 S0 T0` / `M104 S0 T1`, retract `G1 E-1 F300 Z320`,
-  park `G0 F3600 X320 Y0`, `M84`
-- Tool change (dual): retract → travel to `X330` → `G1 F1200 E8.5` → `G92 E0` → `T<n>` →
-  `G92 E0` → `M109 S<temp>` → `M106 S<fan>` → `G1 F1200 E8.5` prime → resume
-
-Write the full verbatim extraction to `reference/extracted-gcode.md` (task 2).
+  - `M4010` — QIDI thumbnail/preview blob; `M4010 X<w> Y<h>` then chunked hex payload
+  - `M2100 T<seconds>` — print time estimate for the display
+  - `M141 S<n>` — chamber heater. Both references emit `M141 S0`, and it sits *after* the
+    prime line, not in the heating order. There is no `M191` anywhere.
+  - `M106 T-2 S255` / `M107 T-2` — `T-2` is not an extruder index. Target unidentified;
+    `TODO(verify)`, do not guess.
+- Heating order in the start block: `M140 S80` → `M104 T0 S200` → `M104 T1 S230` →
+  `M190 S80` → `M109 T1 S230` → `M109 T0 S200`. Everything is set first and waited on
+  after, so bed and both nozzles heat in parallel. In the single file the two T1 lines are
+  present but commented out.
+- End block is **15 lines**, not 7: `M107 T-2` / `M140 S0` / `M107` / `M104 S0 T0` /
+  `M104 S0 T1` / `M140 S0` (twice, yes) / `;Retract the filament` / `G92 E1` /
+  `G1 E-1 F300 Z320` / `G0 F3600 X320 Y0` / `M84` / `M82` / `M104 S0` / `;End of Gcode`.
+  Byte-identical between the two files apart from the preceding final retract's E value.
+- **Tool change: three variants, 49 of them in the dual file** (25 `T1`, 24 `T0`). All
+  share a framing of `G1 F1200 E<current − 8.5>` (an **8.5 mm retract**, not a prime) then
+  `G92 E0`. Switching *to* T0 blocks on `M109 S200`; switching *to* T1 does not, and drops
+  the parked T0 to `M104 T0 S150` before the `T`. The literal `E8.5` prime comes *after*
+  the `T`. The parked hotend's return to 200 °C is issued ~107 lines *earlier*, mid-print,
+  outside the tool-change block entirely. Full taxonomy in §7 of the extraction.
 
 ## QIDI's published profiles
 
@@ -178,7 +198,7 @@ bed is **never changed mid-print**, and adding PETG did not move it. So 80 °C i
 it is safe to carry into a PLA-only profile.
 
 That said, **bed temperature is a filament property in Orca**, not a machine or process
-one — `hot_plate_temp` and `hot_plate_temp_initial_layer` (`PrintConfig.cpp:1169`, `1223`),
+one — `hot_plate_temp` and `hot_plate_temp_initial_layer` (`v2.4.2` `PrintConfig.cpp:1001`, `1061`),
 keyed per bed type. It therefore lives in our generic PLA filament profile, not the
 machine profile. Two consequences once a second material is added:
 
@@ -189,9 +209,9 @@ machine profile. Two consequences once a second material is added:
   agree and the reference is reproduced either way. Keep it that way unless there is a
   reason not to.
 - The start G-code must use the **scalar** placeholder `bed_temperature_initial_layer_single`
-  (`GCode.cpp:3538`), which is the resolved single value. The X-CF Pro base start G-code
-  uses the vector `[hot_plate_temp_initial_layer]`, which is per-filament and is the wrong
-  shape for a two-extruder machine emitting one `M140`.
+  (confirmed at `v2.4.2`, `GCode.cpp:3034`), which is the resolved single value. The
+  X-CF Pro base start G-code uses the vector `[bed_temperature_initial_layer]`, which is
+  per-filament and is the wrong shape for a two-extruder machine emitting one `M140`.
 
 ### Standby / idle nozzle temperature — the reference does this
 
@@ -259,6 +279,8 @@ validation output. `.gitattributes` protects the byte-exactness of `reference/**
   endings there — the committed blobs are byte-identical to what QIDI Print produced.
   (Verified: `sha1sum` of worktree and index match for both G-code files.) Do not relax
   this; `core.autocrlf=input` is set on this machine and would otherwise normalise them.
+  The one exception is `reference/*.md` — our own commentary, not an input — which is
+  re-marked `text eol=lf diff` so it does not get stored as an undiffable binary blob.
 - Every value added to a profile gets a line in `README.md` naming its source, or a
   `TODO(verify):` entry in `TODO.md`. A profile that fails loudly beats one that slices
   fine and prints badly.
