@@ -38,23 +38,30 @@ Plus 4 / Plus 5, which are Klipper machines with a completely different motion s
 | OrcaSlicer clone | `/home/brad/Projects/OrcaSlicer/OrcaSlicer` (note: **not** `OracSlicer`) |
 | Clone state | branch `main`, `2.5.0-dev`. **Target the `v2.4.2` tag** — read profiles with `git show v2.4.2:<path>` rather than from the working tree |
 | Qidi vendor bundle | `<clone>/resources/profiles/Qidi.json` + `<clone>/resources/profiles/Qidi/` (bundle `02.04.00.06` at `v2.4.2`; `02.04.00.12` on `main`) |
-| Installed Orca | AppImages `2.0.0`, `2.2.0`, `2.3.1` in `~/Applications`; flatpak `io.github.softfever.OrcaSlicer` 2.0.0 |
-| User config dir | `~/.config/OrcaSlicer/user/default/{machine,process,filament}/` (exists, currently empty) |
-| Config schema version | `~/.config/OrcaSlicer/OrcaSlicer.conf` reports `01.08.04.51` (= last run by Orca 2.0.0) |
+| Installed Orca | **flatpak `com.orcaslicer.OrcaSlicer` 2.4.2** (the target). Also AppImages `2.0.0`, `2.2.0`, `2.3.1` in `~/Applications` |
+| User config dir | `~/.var/app/com.orcaslicer.OrcaSlicer/config/OrcaSlicer/user/default/{machine,process,filament}/` — **the flatpak sandbox, not `~/.config/OrcaSlicer`** (that tree belongs to the AppImages, schema `01.08.04.51`) |
+| Vendors enabled | Anycubic only. **QIDI is not enabled**, so `inherits` will not resolve until the config wizard installs QIDI → X-Max |
 
 **Target version: OrcaSlicer 2.4.2** (decided 2026-09-07). The working tree is a
 2.5.0-dev nightly, so pull base profiles from the tag, not the tree:
-`git show v2.4.2:"resources/profiles/Qidi/machine/Qidi X-CF Pro 0.4 nozzle.json"`.
+`git show v2.4.2:"resources/profiles/Qidi/machine/Qidi X-Max 0.4 nozzle.json"`.
+
+Flathub renamed the app to `com.orcaslicer.OrcaSlicer`; the old bundle-installed
+`io.github.softfever.OrcaSlicer` had a dead origin and could not be upgraded. The
+installed flatpak ships Qidi bundle `02.04.00.06`, and its `Qidi X-Max 0.4 nozzle`,
+`fdm_qidi_common`, `fdm_machine_common`, `Qidi X-Max.json` and
+`0.20mm Standard @Qidi XMax` are **byte-identical to the `v2.4.2` tag** — verified, so
+reading from the tag is safe.
 
 The `v2.4.2 → main` drift in our base chain is one cosmetic rename
-(`default_filament_profile`: `"Qidi Generic PLA"` → `"Generic PLA @Qidi"` in both
-`Qidi X-CF Pro 0.4 nozzle.json` and `fdm_qidi_common.json`). Nothing else differs, so
+(`default_filament_profile`: `"Qidi Generic PLA"` → `"Generic PLA @Qidi"` in
+`Qidi X-Max 0.4 nozzle.json`, `Qidi X-CF Pro 0.4 nozzle.json` and
+`fdm_qidi_common.json` alike — verified for the X-Max leaf). Nothing else differs, so
 working from the tree is *mostly* safe — but the tag is authoritative.
 
-Note the newest **installed** build is the 2.3.1 AppImage. To actually load and test
-the profile, 2.4.2 will need installing.
+2.4.2 is installed and runs (2026-09-07).
 
-## Recon results (task 1, partially done)
+## Recon results (task 1, done)
 
 **Legacy QIDI machines present in the clone** (the only valid base candidates):
 
@@ -67,16 +74,26 @@ the profile, 2.4.2 will need installing.
 Everything else in `Qidi/machine/` (X-Max 3/4, X-Plus 3/4/5, X-Smart 3, Q1 Pro, Q2, Q2C)
 is Klipper-generation. **Never source values from those.**
 
-**Inherits chain** (machine): `Qidi X-CF Pro 0.4 nozzle` → `fdm_qidi_common` →
+**Base profile: `Qidi X-Max 0.4 nozzle`** (changed 2026-09-07 from the X-CF Pro that
+task 1 originally recorded). At `v2.4.2` the two leaves are byte-identical apart from
+`name`, `setting_id`, `printer_model`, `default_print_profile`, `machine_start_gcode`
+and `single_extruder_multi_material` — and X-Max already ships SEMM `"0"` plus a
+legacy-QIDI start block that uses `[bed_temperature_initial_layer_single]` and the
+`G92 E-19` prime idiom, where X-CF Pro ships SEMM `"1"` and inherits the Prusa-style
+block from `fdm_qidi_common`. Both are 300 × 250 × 300, so neither is closer on volume.
+
+**Inherits chain** (machine): `Qidi X-Max 0.4 nozzle` → `fdm_qidi_common` →
 `fdm_machine_common` (root, `inherits` absent). Also present but unrelated:
 `fdm_qidi_x3_common`, `fdm_q_common`, `fdm_machine_x_common` (Klipper side).
 
-### `single_extruder_multi_material` — why it must be flipped to `0`
+### `single_extruder_multi_material` — why it must be `0`
 
-`Qidi X-CF Pro 0.4 nozzle` ships `single_extruder_multi_material: "1"` (SEMM). That
-describes an MMU-style machine: **one** hotend fed several filaments. The i-Fast is the
-other kind — **two** independent hotends. The flag is not cosmetic; it changes four
-things in the slicer:
+SEMM `1` describes an MMU-style machine: **one** hotend fed several filaments. The
+i-Fast is the other kind — **two** independent hotends. Both `fdm_machine_common` and
+`fdm_qidi_common` default to `"1"`, and `Qidi X-CF Pro 0.4 nozzle` keeps it; our base
+`Qidi X-Max 0.4 nozzle` is the one legacy leaf that already sets `"0"` (a large part of
+why it was chosen). We set it explicitly anyway. The flag is not cosmetic; it changes
+four things in the slicer:
 
 1. **How the extruder count is derived** (`Preset::normalize`, `src/libslic3r/Preset.cpp:462`).
    With SEMM on, Orca counts *filaments* from `filament_diameter` and calls
@@ -100,6 +117,35 @@ verbatim `change_filament_gcode` reproduces it. Related: `ooze_prevention` is on
 supported with SEMM off (`Print.cpp:1522`) — and we do want it eventually, since the
 reference drops the idle nozzle to 150 °C. See "Standby / idle nozzle temperature" below.
 
+### How Orca actually emits a tool change (SEMM `0`, prime tower off) — `v2.4.2`
+
+`GCode::set_extruder` (`GCode.cpp:7952`–`8000`) emits, in order:
+
+1. `this->retract(false, false, LiftType::SpiralLift, true)` — note **`toolchange=false`**,
+   so it uses `retraction_length`, and **`retract_length_toolchange` is unreachable on
+   this path** (only the wipe-tower code consumes it). `retract()` internally calls
+   `m_writer.reset_e()`, which in absolute-E mode emits `G92 E0`. So Orca's own output is
+   already the reference's `G1 F… E<−n>` / `G92 E0` framing — but with 2 mm, not 8.5 mm.
+   Hardcoding the reference's 8.5 mm pair into `change_filament_gcode` would desync Orca's
+   retraction bookkeeping by 6.5 mm and under-extrude. Let Orca own it; see `TODO.md`.
+2. the parsed `change_filament_gcode`
+3. `;_FORCE_RESUME_FAN_SPEED` (an extra line the reference has not)
+4. `T<n>` — **suppressed** if the custom block already contains a bare `T<next_extruder>`
+   at line start (`custom_gcode_changes_tool`, `GCode.cpp:241`, called at `:7992`).
+   Suppression is safe: `m_writer.toolchange()` still runs at `:7992` and resets the new
+   extruder's E model; only its *string* is discarded.
+
+Useful placeholders: `change_filament_gcode` gets `next_extruder`, `previous_extruder`,
+`new_filament_temp` (= first-layer temp on layer 0, else `nozzle_temperature`,
+`GCode.cpp:7794`), `old_filament_temp`, `toolchange_count`
+(`PrintConfig.cpp:11384`, `11428`+). `machine_start_gcode` gets `is_extruder_used`
+(`coBools`, set at `GCode.cpp:2901`–`2904`, before start-G-code processing at `:3022`)
+and `bed_temperature_initial_layer_single` (`:3034`). The parser supports
+`{cond ? a : b}` and `{if}{else}{endif}` (`PlaceholderParser.cpp:2215`–`2220`).
+
+**`use_relative_e_distances` defaults to `true`** and the whole base chain leaves it
+unset — so the explicit `"0"` in our profile is a necessary fix, not documentation.
+
 **Nozzle sizes.** Ship **0.4 only.** It is the sole nozzle QIDI documents for the
 i-Fast (`PrusaSlicer_fast.ini`: `nozzle_diameter = 0.4,0.4`), and process values for
 other sizes have no source — inventing them breaks rule 1. Adding sizes later is cheap:
@@ -108,16 +154,46 @@ and set only `name`, `nozzle_diameter`, `printer_variant` and `default_print_pro
 (see `Qidi X-Max 3 0.6 nozzle.json`, 15 keys). The cost is the *process* profile each
 one points at. See `TODO.md`.
 
-**Process chain**: `0.20mm Standard @Qidi XCFPro` → `fdm_process_qidi_common`.
+**Process chain**: `0.20mm Standard @Qidi XMax` → `fdm_process_qidi_common`
+(task 4 inherits the XMax variant now that the machine base changed).
 Legacy layer heights available: 0.12 / 0.16 / 0.20 / 0.25 / 0.30, each in
 `@Qidi XCFPro`, `@Qidi XMax`, `@Qidi XPlus` variants, gated by `compatible_printers`.
 
-**Profile file shape** — a user profile needs `type` (`machine`/`process`/`filament`),
-`name`, `inherits`, `from`, `instantiation`, and for machines `printer_model` /
-`nozzle_diameter` / `printable_area` / `printable_height`. System profiles carry
-`setting_id`; user profiles use `"from": "User"` and no vendor `setting_id`.
-Confirm exact requirements against the clone's loader before writing files — Orca
-silently rejects malformed profiles.
+### What Orca actually requires of a user profile (verified at `v2.4.2`)
+
+`PresetCollection::load_presets` (`src/libslic3r/Preset.cpp:1573`–`1770`) is the whole
+gate for `<config>/user/default/{machine,process,filament}/*.json`. The cloud-sync path
+`load_user_preset` (`:2171`) has different, stricter rules — `setting_id`, `user_id`,
+`base_id`, `updated_time` — that **do not apply** to files on disk.
+
+- **`version` is mandatory and must parse as a Semver.** Absent or malformed →
+  `continue` with *no log line at all* (`:1653`–`1656`). This is the silent-rejection
+  mechanism. Four-component versions work (`deps_src/semver/semver.c:196`–`212`), so use
+  the vendor bundle's own `02.04.00.06`. Nothing compares it against the app version.
+- **`inherits` must resolve to an already-loaded, `instantiation: "true"` preset.**
+  Unresolvable → `can not find parent %1% for config %2%!` and the preset is dropped
+  (`:1686`–`1692`). You cannot inherit an abstract base like `fdm_qidi_common`
+  (`PresetBundle.cpp:4926`). The vendor must be *enabled* in `OrcaSlicer.conf`'s
+  `models` array, or its bundle is deleted from `<config>/system/`
+  (`PresetUpdater.cpp:1068`–`1108`).
+- **The filename is the preset name**; the `name` key is parsed but never read on this
+  path (`:1613`–`1615`). It must not collide with a system preset name (`:1616`–`1621`).
+- **Unknown keys are stripped, not fatal** (`remove_invalid_keys`, `:1702`). A key not in
+  `Preset::printer_options()` — `s_Preset_printer_options` +
+  `s_Preset_machine_limits_options` + `init_extruder_option_keys()` — silently vanishes.
+- **A bad *value* for a known key deletes the file** (`:1641`–`1651`). So `profiles/` is
+  the source of truth and installing is always a copy.
+- `type`, `from`, `instantiation` do **not** gate loading here. Set them anyway to match
+  what Orca writes back out (`Preset::save`, `:675`–`686`; `from` ∈ User/Project/Bundle/
+  System/Default).
+- `printer_model` / `printer_variant` are **not validated** for user presets — that check
+  is in the system bundle loader only (`PresetBundle.cpp:4964`–`4999`). A new model name
+  is the supported shape; Orca synthesises a `"Custom"` vendor from root user printers
+  (`:2394`). Avoid reusing a QIDI model name: `get_current_vendor_type()` (`:612`–`641`)
+  would then classify the i-Fast as `VendorType::Klipper_Qidi`.
+- `printable_area` is `coPoints` — a JSON array of `"XxY"` strings, 4 corners
+  counter-clockwise from the origin. Its `deserialize` **always returns true**, so a
+  malformed bed silently becomes degenerate rather than erroring.
 
 ## Ground truth from the reference G-code
 
@@ -136,8 +212,10 @@ Headlines:
   CRLF. Single: 3628 lines, `M4010` thumbnail on 1-131, G-code header from 132.
   Dual: 11411 lines, thumbnail on 1-458, header from 459, plus a `;SETTING_3` Cura trailer.
 - **The reference is absolute-E.** `M82` in the start block and every extrusion move
-  carries an absolute `E` (1855 moves single, 7802 dual). The X-CF Pro base start G-code
-  emits `M83` — relative. So `use_relative_e_distances` must be `0`.
+  carries an absolute `E` (1855 moves single, 7802 dual). `use_relative_e_distances`
+  **defaults to `true`** and no profile in the base chain overrides it, so it must be set
+  to `0` explicitly. (The `M83` in `fdm_qidi_common`'s start G-code is inherited by the
+  X-CF Pro but *not* by our X-Max base, which replaces that block.)
 - **`A`/`B` axes appear only in the start block, and only for the prime line.** All
   5 occurrences per file are in the start G-code; the body and the tool change use plain
   `E`. `A` is extruder 0's axis, `B` is extruder 1's, which lets QIDI Print prime both
@@ -209,9 +287,10 @@ machine profile. Two consequences once a second material is added:
   agree and the reference is reproduced either way. Keep it that way unless there is a
   reason not to.
 - The start G-code must use the **scalar** placeholder `bed_temperature_initial_layer_single`
-  (confirmed at `v2.4.2`, `GCode.cpp:3034`), which is the resolved single value. The
-  X-CF Pro base start G-code uses the vector `[bed_temperature_initial_layer]`, which is
-  per-filament and is the wrong shape for a two-extruder machine emitting one `M140`.
+  (confirmed at `v2.4.2`, `GCode.cpp:3034`), which is the resolved single value — the
+  vector `[bed_temperature_initial_layer]` is per-filament and the wrong shape for a
+  two-extruder machine emitting one `M140`. Our X-Max base already uses the scalar form;
+  the X-CF Pro, via `fdm_qidi_common`, uses the vector.
 
 ### Standby / idle nozzle temperature — the reference does this
 
