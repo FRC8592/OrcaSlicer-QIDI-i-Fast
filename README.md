@@ -303,13 +303,23 @@ layer height, and QIDI's ini says 0.35 — the reference G-code wins, and it app
 every variant because the start block's hardcoded `G0 X0 Y4 Z0.3` prime line assumes it.
 Recorded in `TODO.md` as needing a first-print check.
 
-**No prime tower**, from two independent sources plus a mechanical requirement. QIDI's own
+**No prime tower**, from two independent sources plus a hard incompatibility. QIDI's own
 PrusaSlicer profile sets `wipe_tower = 0`, and `dual-extruder.gcode` has no tower in the
 print body — the only sub-`X20` coordinates in the whole file are the `X0`/`X5` of the
-start block. It is also load-bearing: with a prime tower OrcaSlicer takes the
-`WipeTowerIntegration` path (`v2.4.2:GCode.cpp:813`+) instead of `GCode::set_extruder`
-(`:7952`), and the `change_filament_gcode` above never runs. The stock bases all set `"1"`,
-so this cannot be left to inheritance.
+start block. The stock bases all set `"1"`, so this cannot be left to inheritance.
+
+**Can it be turned on? Not on 2.4.2, not with this profile.** `Print::validate` refuses
+the slice outright: *"The Wipe Tower is currently only supported with the relative
+extruder addressing (use_relative_e_distances=1)"* (`v2.4.2:Print.cpp:1433`–`1434`,
+exit `-51`; reproduced by the task-6 harness). Our absolute E is not a preference — it is
+what the reference does, on every one of its extrusion moves — so a prime tower and
+fidelity to QIDI Print are mutually exclusive here. Switching to relative E to get one
+would also change the path the tool change takes: `set_extruder` is bypassed for
+`WipeTowerIntegration::append_tcr` (`GCode.cpp:712`+), which processes
+`change_filament_gcode` itself (`:815`, `:972`) with its own surrounding retraction and
+temperature handling — so the tool-change block would need re-validating from scratch.
+QIDI's own answer to ooze on this machine is not a tower at all: an 8.5 mm tool-change
+retract and a standby temperature drop, both recorded in `TODO.md`.
 
 **Both printer names in `compatible_printers`**, because the GUI and the CLI check
 different things. `is_compatible_with_printer` (`v2.4.2:Preset.cpp:837`–`839`) matches the
@@ -655,3 +665,24 @@ OrcaSlicer project.
 
 Single extruder, PLA, small model, supervised, chamber heater off. Get that clean
 before trusting anything else in here.
+
+Three things to watch, each with a `TODO.md` entry behind it:
+
+1. **Does the head do a lift/park cycle before the first layer?** The single-extruder
+   GUI slice emits a bare `T0` after OrcaSlicer's `G90`/`G21`/`M82` preamble, between the
+   start block's prime line and the first layer, which neither the QIDI Print reference
+   nor a CLI slice contains. T0 is already the active tool, so it *should* be inert — but
+   head auto-lift on this machine is firmware behaviour triggered by tool changes, and
+   nobody has watched what the firmware does with a redundant `T0`. If the head lifts,
+   parks, or pauses there, say so: it is fixable, but not by editing the start block
+   (OrcaSlicer emits the line afterwards, on its own).
+2. **First-layer squish at `initial_layer_print_height` 0.3 mm.** It comes from the
+   reference — layer 0 at `Z0.3` — and overrides both the stock profiles and QIDI's ini
+   (0.35). Watch adhesion and elephant's foot; the bed is also at 80 °C, high for PLA.
+3. **After the first *dual-material* print, revisit the tool-change retract.** We use
+   `retract_length_toolchange` 2 mm, inherited from the base; QIDI Print retracts
+   **8.5 mm** at every tool change and primes the same amount back. Left at 2 mm
+   deliberately, and it cannot matter on a single-extruder print, which has no tool
+   change. Judge it on stringing and ooze between the two materials on the first dual
+   job: if there are strings or blobs at the changes, 8.5 mm is a one-key change that
+   matches ground truth — `TODO.md` has the mechanism and the exact key.

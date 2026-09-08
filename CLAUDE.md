@@ -126,6 +126,11 @@ how many filaments the *job* uses, not how many the printer has:
   early-returns at `:7717`–`:7747` with nothing but `m_writer.toolchange(id)`. The custom
   `change_filament_gcode` never runs. This is where the single-extruder GUI slice's extra
   bare `T0` comes from; see "Confirmed by the 2.4.2 GUI slices" below.
+  (A *third* path exists but is unreachable for us: with a prime tower the tool change
+  goes through `WipeTowerIntegration::append_tcr` (`GCode.cpp:712`+), which processes
+  `change_filament_gcode` itself at `:815`/`:972` — it does **not** ignore it, as an
+  earlier note in `README.md` claimed. Moot here: a wipe tower requires relative E
+  (`Print.cpp:1433`–`1434`), which the reference rules out.)
 - **Two filaments used** → the full path, which emits, in order:
 
 1. `this->retract(true, false)` (`:7753`) — **`toolchange=true`**, so it routes through

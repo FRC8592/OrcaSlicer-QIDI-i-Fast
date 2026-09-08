@@ -103,6 +103,17 @@ human** and **Unverified profile values** below.
       Residual, minor: nobody has read the GUI's *log* for warnings. The G-code proves
       the presets resolved; it does not prove the log is clean.
 
+- [ ] **First print: watch for a lift/park cycle before the first layer.** The
+      single-extruder GUI slice emits a bare `T0` between the start block's prime line
+      and the first layer — after OrcaSlicer's `G90`/`G21`/`M82` preamble — which neither
+      the QIDI Print reference nor a CLI slice contains. T0 is already the active tool, so
+      it should be a no-op, but **head auto-lift is firmware behaviour triggered by tool
+      changes** and nobody has watched what this firmware does with a redundant `T0`.
+      What to look for: does the head lift, park, or pause between priming at
+      `X0 Y4 Z0.3` and starting layer 1? If it does, say so — it is fixable, but not by
+      editing the start block: OrcaSlicer emits the line itself, afterwards. Mechanism
+      and code references under **Found by the 2.4.2 GUI slices**.
+
 - [ ] **Which head assembly is installed** — standard brass, or the 350 °C high-temp
       variant? Per the handoff we default to the standard brass head, so the profile
       ships `nozzle_type: ["brass","brass"]`; the reference G-code only ever reaches
@@ -131,6 +142,23 @@ human** and **Unverified profile values** below.
 - [x] **`single_extruder_multi_material: "0"`**, paired with
       `nozzle_diameter: ["0.4","0.4"]` — the flag alone does not change the extruder
       count. Full reasoning in `CLAUDE.md`.
+- [x] **No prime/wipe tower — and it cannot be enabled on 2.4.2** (asked and answered
+      2026-09-07). `Print::validate` refuses the slice outright with *"The Wipe Tower is
+      currently only supported with the relative extruder addressing
+      (use_relative_e_distances=1)"* (`v2.4.2:Print.cpp:1433`–`1434`, exit `-51`;
+      reproduced by the task-6 harness). Our absolute E is not a preference — it is what
+      the reference does on every extrusion move — so a tower and fidelity to QIDI Print
+      are mutually exclusive at this version.
+      If it is ever wanted, the cost is not just the `use_relative_e_distances` flip: the
+      tool change would move off `GCode::set_extruder` onto
+      `WipeTowerIntegration::append_tcr` (`GCode.cpp:712`+), which processes
+      `change_filament_gcode` itself (`:815`, `:972`) with its own retraction and
+      temperature handling, so the whole tool-change block would need re-validating.
+      (This corrects an earlier note in `README.md` which said `change_filament_gcode`
+      "never runs" with a tower. It does run — by a different route.)
+      QIDI's own answer to ooze on this machine is not a tower: an 8.5 mm tool-change
+      retract and a standby temperature drop. Both are already recorded — see the
+      retract entry under task 3 and **Deferred until a second material exists**.
 - [x] **Nozzle sizes: 0.4 only for now.** The only size QIDI documents for the i-Fast.
 - [x] **Base profile: `Qidi X-Max 0.4 nozzle`**, not `Qidi X-CF Pro 0.4 nozzle`
       (2026-09-07, changed from task 1). At `v2.4.2` the two are byte-identical apart
@@ -263,7 +291,12 @@ _Populated as profiles are written._
 
 ### From task 3 (the machine profile)
 
-- [ ] **DECISION NEEDED: the 8.5 mm tool-change retract is reproducible after all.**
+- [ ] **CHECK AFTER THE FIRST DUAL PRINT: the tool-change retract stays at 2 mm.**
+      **Decided 2026-09-07 (user): leave it at 2 mm for now.** It cannot matter on a
+      single-extruder print — there is no tool change — so the question is entirely about
+      the first *multi-head* job. Judge it there, on stringing and ooze at the changes:
+      if there are strings or blobs, set `retract_length_toolchange` to `["8.5","8.5"]`,
+      which matches ground truth and is a one-key change.
       The reference retracts 8.5 mm before every tool change and primes 8.5 mm after it;
       we do 2 mm, carried from the base.
       **Correction (2026-09-07), from re-reading `v2.4.2` and measuring a real GUI dual
