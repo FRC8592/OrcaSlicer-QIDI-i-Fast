@@ -6,7 +6,10 @@
 > apart from two *commented-out* `T1` temperature lines, whose value tracks whatever
 > filament sits in extruder 2. A two-material slice emits the tool-change block as
 > designed. Run `bash scripts/validate.sh` to reproduce — see
-> [Validation](#validation). **Nothing has been printed yet.**
+> [Validation](#validation). The profile has also been **loaded and sliced by hand in the
+> 2.4.2 GUI**, single- and dual-extruder, which is where `inherits` actually resolves —
+> see [Confirmed in the 2.4.2 GUI](#confirmed-in-the-242-gui). **Nothing has been printed
+> yet.**
 >
 > Installing is a copy of seven JSON files — see [Installation](#installation-linux).
 > [`TODO.md`](TODO.md) lists every unverified value and every open question;
@@ -200,6 +203,14 @@ call `normalize`, so writing them out is what makes a command-line slice see two
 extruders configured the same way the GUI would. Retraction tuning is out of scope until
 after a first print; `z_hop` `0.4` with `z_hop_types` `Auto Lift` has no counterpart in
 the reference and is recorded in `TODO.md`.
+
+One of these is not idle. **`retract_length_toolchange` is what OrcaSlicer actually uses
+around a tool change** — `GCode::set_extruder` calls `retract(toolchange=true)`
+(`v2.4.2:GCode.cpp:7753`) → `GCodeWriter::retract_for_toolchange`
+(`GCodeWriter.cpp:1015`–`1024`), measured at exactly 2 mm in the GUI dual slice. The
+reference retracts 8.5 mm there. Raising it is a one-key change that would match ground
+truth, and it is left to the user because it changes what the hotend physically does;
+see `TODO.md`.
 
 #### G-code blocks — from the reference exports
 
@@ -503,6 +514,37 @@ The harness is verified to catch a regression: flipping `disable_m73` to `0` sur
 `M73` as UNEXPECTED in the start block, the end block and the census. It is also
 verified deterministic — two runs produce identical reports.
 
+### Confirmed in the 2.4.2 GUI
+
+The harness drives the CLI. Two G-code files sliced **by hand in the 2.4.2 GUI** from the
+reference's own 20 mm box are kept in
+[`samples/gui-2.4.2/`](samples/gui-2.4.2/README.md) because the harness cannot produce
+them, and they settle what CLI evidence could not:
+
+- **All three presets load and resolve with no substitution.** Each file embeds its own
+  `; CONFIG_BLOCK`, and it names `QIDI i-Fast 0.4 nozzle`,
+  `0.20mm Standard @QIDI i-Fast` and `QIDI Generic PLA @QIDI i-Fast`, with 330 × 250 × 320,
+  `single_extruder_multi_material 0`, absolute E, first layer 0.3, no prime tower,
+  `disable_m73 1`, `support_air_filtration 0` and unraised motion limits. Every one of
+  those arrives **through `inherits`**, which the CLI never resolves — so this is the
+  first proof the thin presets are right as written, not merely as flattened.
+- **`curr_bed_type = High Temp Plate`**, confirming that the GUI honours
+  `default_bed_type: "3"` where the CLI falls back to Cool Plate.
+- **The 2.4.2 GUI slices two filaments without trouble**, so the abort below is a
+  CLI-only bug — and the tool-change block stands confirmed on the target version:
+  51/51 body changes emit `T<n>` / `G92 E0` / `M109 S200`, both directions.
+- **The `is_extruder_used[1]` conditional behaves in both directions**: the single file
+  comments the `T1` heating pair out and primes `B0`, the dual file leaves them live and
+  primes `B19` — matching `single-extruder.gcode` and `dual-extruder.gcode` respectively.
+  End blocks byte-identical in both.
+- **One new difference the harness is blind to:** the single-extruder GUI slice emits a
+  bare `T0` after OrcaSlicer's `G90`/`G21`/`M82` preamble that neither the reference nor
+  a CLI slice has. With one filament in use `GCode::set_extruder` takes its
+  single-extruder early return (`v2.4.2:GCode.cpp:7717`–`7747`) and emits
+  `m_writer.toolchange(0)` alone — no `change_filament_gcode`, hence no `M109`. T0 is
+  already the active tool, so it should be inert, but tool changes drive the i-Fast's
+  firmware auto-lift; `TODO.md` says what to watch on the first print.
+
 ### The dual-extruder case is sliced with OrcaSlicer 2.3.1, not 2.4.2
 
 **The 2.4.2 CLI aborts on any two-filament slice**, with a `std::vector` out-of-range
@@ -530,12 +572,17 @@ G92 E0                    ; OrcaSlicer's own reset_e() before the change
 T0
 G92 E0                    ; our change_filament_gcode, verbatim
 M109 S200
-;_FORCE_RESUME_FAN_SPEED  ; OrcaSlicer re-asserting fan speed
+M106 S<n>                 ; OrcaSlicer re-asserting fan speed
 ```
 
 which is reference variant C's shape, minus the three documented omissions: the
-commented `;M105`, the 8.5 mm retract/prime pair that OrcaSlicer's own retraction owns,
-and the `M104 T<old> S150` standby drop deferred to `ooze_prevention`.
+commented `;M105`, the 8.5 mm retract/prime pair that OrcaSlicer's own retraction owns
+(at our inherited 2 mm — matching the reference is a one-key change to
+`retract_length_toolchange`, and `TODO.md` explains why that is the user's call), and
+the `M104 T<old> S150` standby drop deferred to `ooze_prevention`. The literal
+`;_FORCE_RESUME_FAN_SPEED` marker OrcaSlicer appends after `change_filament_gcode`
+survives into the file **only after the initial tool selection** — one occurrence per
+file; the post-processor replaces it with the actual `M106` everywhere else.
 
 Open differences the report lists every run — `G92 E0` 333× against the reference's 7,
 OrcaSlicer's extra `G21` / `G90` / `M82`, the reference's unexplained mid-print
@@ -564,6 +611,9 @@ reference/           read-only inputs, never edited
   single-extruder.gcode, dual-extruder.gcode            QIDI Print exports: ground truth
   extracted-gcode.md                                    the verbatim extraction, with commentary
   qidi-profiles/                                        QIDI's published legacy bundle
+
+samples/gui-2.4.2/   two GUI-sliced G-code files from OrcaSlicer 2.4.2, with a note
+                     on what they prove. The harness cannot produce these.
 
 scripts/             the validation harness -> out/validate/report.md
   validate.sh  flatten.py  make_models.py  gcode_diff.py  accepted.py

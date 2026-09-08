@@ -119,18 +119,36 @@ reference drops the idle nozzle to 150 °C. See "Standby / idle nozzle temperatu
 
 ### How Orca actually emits a tool change (SEMM `0`, prime tower off) — `v2.4.2`
 
-`GCode::set_extruder` (`GCode.cpp:7952`–`8000`) emits, in order:
+`GCode::set_extruder` (`GCode.cpp:7710`) has **two paths**, and which one runs depends on
+how many filaments the *job* uses, not how many the printer has:
 
-1. `this->retract(false, false, LiftType::SpiralLift, true)` — note **`toolchange=false`**,
-   so it uses `retraction_length`, and **`retract_length_toolchange` is unreachable on
-   this path** (only the wipe-tower code consumes it). `retract()` internally calls
-   `m_writer.reset_e()`, which in absolute-E mode emits `G92 E0`. So Orca's own output is
-   already the reference's `G1 F… E<−n>` / `G92 E0` framing — but with 2 mm, not 8.5 mm.
-   Hardcoding the reference's 8.5 mm pair into `change_filament_gcode` would desync Orca's
-   retraction bookkeeping by 6.5 mm and under-extrude. Let Orca own it; see `TODO.md`.
-2. the parsed `change_filament_gcode`
-3. `;_FORCE_RESUME_FAN_SPEED` (an extra line the reference has not)
-4. `T<n>` — **suppressed** if the custom block already contains a bare `T<next_extruder>`
+- **One filament used** → `m_writer.multiple_extruders` is false and the function
+  early-returns at `:7717`–`:7747` with nothing but `m_writer.toolchange(id)`. The custom
+  `change_filament_gcode` never runs. This is where the single-extruder GUI slice's extra
+  bare `T0` comes from; see "Confirmed by the 2.4.2 GUI slices" below.
+- **Two filaments used** → the full path, which emits, in order:
+
+1. `this->retract(true, false)` (`:7753`) — **`toolchange=true`**, so it routes through
+   `m_writer.retract_for_toolchange()` and uses **`retract_length_toolchange` and
+   `retract_restart_extra_toolchange`** (`GCodeWriter.cpp:1015`–`1024`), not
+   `retraction_length`. `retract()` internally calls `m_writer.reset_e()`, which in
+   absolute-E mode emits `G92 E0`, so Orca's own output is already the reference's
+   `G1 F… E<−n>` / `G92 E0` framing. Measured in the 2.4.2 GUI dual slice: 1.82755 mm
+   before the wipe + 0.17245 mm during it = exactly the 2 mm `retract_length_toolchange`
+   we carry from the base, and a symmetric `G1 E2` prime after the change.
+   **This corrects an earlier note here** that claimed `toolchange=false` and that
+   `retract_length_toolchange` was unreachable outside the wipe tower. It is reachable,
+   which means the reference's 8.5 mm tool-change retract *is* reproducible — as a
+   one-key change, with Orca's bookkeeping staying consistent. See `TODO.md`; it is a
+   decision for the user, not a defect.
+2. a second `this->retract(false, false, LiftType::SpiralLift, true)` at `:7956`, whose
+   job is the lift; it is prepended to the parsed `change_filament_gcode`
+3. the parsed `change_filament_gcode`
+4. `;_FORCE_RESUME_FAN_SPEED`. Note this survives into the output **only after the
+   initial tool selection** — for every later change the G-code post-processor replaces
+   it with the actual `M106`. Both the 2.3.1 CLI and the 2.4.2 GUI dual files contain
+   exactly one of them.
+5. `T<n>` — **suppressed** if the custom block already contains a bare `T<next_extruder>`
    at line start (`custom_gcode_changes_tool`, `GCode.cpp:241`, called at `:7992`).
    Suppression is safe: `m_writer.toolchange()` still runs at `:7992` and resets the new
    extruder's E model; only its *string* is discarded.
@@ -340,6 +358,7 @@ reference/                             # inputs: QIDI Print G-code + QIDI's publ
   single-extruder.gcode                #   ground truth: start/end blocks, M-codes
   dual-extruder.gcode                  #   ground truth: tool-change sequence
   qidi-profiles/                       #   QIDI's legacy bundle (PrusaSlicer/Cura/S3D/ideaMaker)
+samples/gui-2.4.2/                     # GUI-sliced evidence the harness cannot produce
 scripts/                               # validation harness (task 6)
   validate.sh                          #   entry point: flatten, slice, diff, report
   flatten.py                           #   resolves `inherits`, which the CLI does not
@@ -427,6 +446,32 @@ result. Details and the full list of what was ruled out are in `TODO.md`
 Block boundaries used by the harness are unique in all three files: the start block is
 `;T0` … `M141 S0` inclusive, the end block `M107 T-2` … `;End of Gcode`, and
 OrcaSlicer's `; CONFIG_BLOCK_START` trailer is truncated before any comparison.
+
+## Confirmed by the 2.4.2 GUI slices (2026-09-07)
+
+The user sliced the reference's own 20 mm box by hand in the OrcaSlicer 2.4.2 **GUI**,
+once per extruder count. Both files, and what they establish, are in
+[`samples/gui-2.4.2/`](samples/gui-2.4.2/README.md). This is the only evidence of GUI
+behaviour in the repo — the harness drives the CLI, and the two paths differ.
+
+- **All three presets load and resolve in the GUI**, no substitution: the embedded
+  `; CONFIG_BLOCK` names `QIDI i-Fast 0.4 nozzle`, `0.20mm Standard @QIDI i-Fast` and
+  `QIDI Generic PLA @QIDI i-Fast`, with 330×250×320, SEMM `0`, absolute E, first layer
+  0.3, no prime tower, `disable_m73`, `support_air_filtration 0` and unraised motion
+  limits all arriving through `inherits`.
+- **`curr_bed_type = High Temp Plate`** — the GUI honours `default_bed_type: "3"` where
+  the CLI falls back to Cool Plate, exactly as `README.md` predicted. Both now emit
+  `M140 S80`.
+- **The 2.4.2 GUI slices two filaments without trouble.** The `std::vector` abort is a
+  CLI-only bug. The tool-change block therefore stands confirmed **on the target
+  version**: 51/51 body changes emit `T<n>` / `G92 E0` / `M109 S200` in both directions.
+- **The `is_extruder_used[1]` conditional works in both directions in the GUI**: the
+  single file comments the `T1` heating pair out and primes `B0`; the dual file leaves
+  them live and primes `B19`. That is what the two reference files do respectively.
+- **New difference — a bare `T0` after the preamble in the single-extruder case.** It
+  comes from the one-filament early return in `GCode::set_extruder` (see above). The CLI
+  slice of the same profile does not emit it, so the harness is blind to it. Recorded in
+  `TODO.md`.
 
 ## Definition of done
 

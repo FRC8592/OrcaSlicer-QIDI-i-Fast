@@ -7,3 +7,6 @@ reference/*.md text eol=lf diff
 
 # Profile JSONs are ours; normalise them.
 profiles/**/*.json text eol=lf
+
+# Our own GUI-sliced evidence: text, but pointless to diff line by line.
+samples/**/*.gcode text eol=lf -diff
