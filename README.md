@@ -737,6 +737,9 @@ samples/gui-2.4.2/   two GUI-sliced G-code files from OrcaSlicer 2.4.2, with a n
 scripts/             the validation harness -> out/validate/report.md
   validate.sh  flatten.py  make_models.py  gcode_diff.py  accepted.py
 
+intent/              proto-specs: why each piece of work was started, written first
+                     TEMPLATE.md is the shape; NNNN-*.md are the intents themselves
+
 README.md            this file: provenance, install, validation
 TODO.md              every unverified value, every open question, every decision
 CLAUDE.md            environment and recon notes for anyone picking the work up

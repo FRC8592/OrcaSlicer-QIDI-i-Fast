@@ -394,12 +394,27 @@ scripts/                               # validation harness (task 6)
   make_models.py                       #   binary-STL test cubes
   gcode_diff.py                        #   the seven comparisons
   accepted.py                          #   registry of known differences, with reasons
+intent/                                # proto-specs: why each piece of work was started
 ifast-orca-profile-handoff.md          # the spec
 README.md                              # provenance: which value came from where
 TODO.md                                # every unverified value
 LICENSE                                # AGPL-3.0, verbatim from OrcaSlicer v2.4.2
 NOTICE                                 # attribution chain + per-file derivation
 ```
+
+**Which doc gets the writing.** Four documents, four tenses — keep them apart, and make
+each one *link* to the others rather than restating them, or they drift:
+
+| Doc | Answers | Tense |
+|---|---|---|
+| `intent/NNNN-*.md` | Why are we about to do this? What would "done" look like? | Before |
+| `ifast-orca-profile-handoff.md` | How does it break into tasks? What are the hard rules? | Design |
+| `TODO.md` | What is unverified or undecided *right now*? | Live |
+| `README.md` | Where did each shipped value come from? | After |
+
+An intent is written *before* the work, in the originator's own words, and is never a
+place to record provenance or tick off unverified values — those belong in `README.md`
+and `TODO.md` respectively. Don't write one for work nobody has picked up yet.
 
 **Packaging (task 7, done.)** `README.md` documents *every* key in the machine profile,
 grouped by source, so an audit of `profiles/` against the flattened base turns up nothing
