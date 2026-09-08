@@ -1,11 +1,12 @@
 # QIDI i-Fast — OrcaSlicer profile
 
-> **Status: machine, process and filament profiles written and slice-tested against
-> OrcaSlicer 2.4.2.** A real single-extruder slice now emits an end block **byte-identical**
-> to the QIDI Print reference and a start block identical apart from two *commented-out*
-> `T1` temperature lines, whose value tracks whatever filament sits in extruder 2. The
-> validation harness (task 6) is still to come; the tool-change block is derived from
-> source but not yet executed. See
+> **Status: machine, process and filament profiles written, and validated by a
+> repeatable harness against the QIDI Print reference exports.** A single-extruder slice
+> emits an end block **byte-identical** to the reference and a start block identical
+> apart from two *commented-out* `T1` temperature lines, whose value tracks whatever
+> filament sits in extruder 2. A two-material slice emits the tool-change block as
+> designed. Run `bash scripts/validate.sh` to reproduce — see
+> [Validation](#validation). Nothing has been printed yet. See
 > [`TODO.md`](TODO.md) for every unverified value and
 > [`ifast-orca-profile-handoff.md`](ifast-orca-profile-handoff.md) for the spec.
 
@@ -303,6 +304,99 @@ deviating from the reference, so it stays. See `TODO.md`.
 ### Unverified values
 
 See [`TODO.md`](TODO.md).
+
+## Validation
+
+```bash
+bash scripts/validate.sh          # writes out/validate/report.md
+```
+
+The harness slices the shipped profiles and diffs the result against
+`reference/single-extruder.gcode` and `reference/dual-extruder.gcode`, ignoring
+coordinates and comments where the handoff says to. It needs nothing but Python 3, a
+`bash`, and an OrcaSlicer install with the QIDI vendor enabled; `out/` is regenerated
+from scratch on every run and is gitignored.
+
+| Script | What it does |
+|---|---|
+| `scripts/validate.sh` | entry point: flatten, generate models, slice, diff, report |
+| `scripts/flatten.py` | resolves a preset's `inherits` chain, which the CLI does not |
+| `scripts/make_models.py` | writes the test cubes as binary STL |
+| `scripts/gcode_diff.py` | the five comparisons |
+| `scripts/accepted.py` | the registry of known differences, with a reason for each |
+
+Environment overrides: `ORCA_CMD`, `ORCA_SYSTEM_DIR`, `ORCA_DUAL_CMD`, `DUAL_FILAMENT2`.
+
+### The five checks
+
+1. **Start block** — `;T0` through `M141 S0`, compared **literally**. This block is our
+   own `machine_start_gcode` verbatim, so its comments carry meaning and are not
+   stripped. A second pass with `S` values normalised distinguishes a temperature-value
+   difference from a structural one.
+2. **End block** — `M107 T-2` through `;End of Gcode`, also literal.
+3. **Temperature commands** — every `M104` / `M109` / `M140` / `M190` / `M141` / `M191`
+   line in the file, in order, as a sequence diff plus a per-form count table.
+4. **M-codes and G-codes used** — a bare code inventory, and argument forms for M-codes
+   and control G-codes (`G0`/`G1` are toolpath and excluded from the form table).
+5. **Tool-change sequence** (dual only) — every body `T0`/`T1` with its surrounding
+   lines, coordinates normalised, grouped into distinct shapes and compared against the
+   three reference variants in
+   [`reference/extracted-gcode.md`](reference/extracted-gcode.md) §7.
+
+### How differences are classified
+
+Hard rule 7 of the handoff is "report every difference; do not suppress diffs to make a
+check pass", so `scripts/accepted.py` decides a difference's **classification**, never
+its visibility. Every difference appears in the report either way.
+
+| Verdict | Meaning | Fails the run? |
+|---|---|---|
+| **ACCEPTED** | A deliberate, justified deviation, or an artifact of the test fixture. The registry entry names the reason and the document that argues it. | no |
+| **KNOWN** | Documented in `TODO.md` but **not settled** — an open question, reported in full every run. This set should shrink. | no |
+| **UNEXPECTED** | Not in the registry. A new difference. | **yes** |
+
+The harness is verified to catch a regression: flipping `disable_m73` to `0` surfaces
+`M73` as UNEXPECTED in the start block, the end block and the census. It is also
+verified deterministic — two runs produce identical reports.
+
+### The dual-extruder case is sliced with OrcaSlicer 2.3.1, not 2.4.2
+
+**The 2.4.2 CLI aborts on any two-filament slice**, with a `std::vector` out-of-range
+assertion, before emitting anything. This is an upstream bug, not a defect in these
+profiles: it reproduces with OrcaSlicer's own stock `Lulzbot Taz Pro Dual 0.5 nozzle`
+preset and with a single-nozzle machine, and it survives every combination of
+`--load-filament-ids`, `--arrange`, `--no-check` and hand-supplied extruder-variant
+keys. The 2.3.1 AppImage slices the identical flattened presets fine, so the harness
+falls back to it for the dual case and says so in the report.
+
+So the dual result is **evidence about the profile's tool-change block, not about
+2.4.2's output**. Confirm a two-material job in the 2.4.2 GUI before trusting it; see
+`TODO.md`. The single-extruder case is sliced with the target version throughout.
+
+### What the harness reports today
+
+Single-extruder: end block byte-identical; start block differing only in the two
+commented-out `T1` heating lines, whose value tracks the second slot's filament. Zero
+`M900`, zero `M106 P<n>`, zero `M73`.
+
+Dual-extruder: all 101 body tool changes emit
+
+```gcode
+G92 E0                    ; OrcaSlicer's own reset_e() before the change
+T0
+G92 E0                    ; our change_filament_gcode, verbatim
+M109 S200
+;_FORCE_RESUME_FAN_SPEED  ; OrcaSlicer re-asserting fan speed
+```
+
+which is reference variant C's shape, minus the three documented omissions: the
+commented `;M105`, the 8.5 mm retract/prime pair that OrcaSlicer's own retraction owns,
+and the `M104 T<old> S150` standby drop deferred to `ooze_prevention`.
+
+Open differences the report lists every run — `G92 E0` 333× against the reference's 7,
+OrcaSlicer's extra `G21` / `G90` / `M82`, the reference's unexplained mid-print
+`M104 S200`, the spiral Z lift, and our `M109` firing at every tool change where QIDI
+Print blocks only when switching to T0 — are all in `TODO.md`.
 
 ## Scope
 

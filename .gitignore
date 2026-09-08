@@ -7,7 +7,14 @@
 *.gcode.gz
 scripts/**/tmp/
 
+# Python
+__pycache__/
+*.pyc
+
 # OS / editor cruft
 .DS_Store
 *~
 *.swp
+
+# OrcaSlicer CLI debris (fixed name, written to the working directory)
+/00000.log

@@ -341,13 +341,19 @@ reference/                             # inputs: QIDI Print G-code + QIDI's publ
   dual-extruder.gcode                  #   ground truth: tool-change sequence
   qidi-profiles/                       #   QIDI's legacy bundle (PrusaSlicer/Cura/S3D/ideaMaker)
 scripts/                               # validation harness (task 6)
+  validate.sh                          #   entry point: flatten, slice, diff, report
+  flatten.py                           #   resolves `inherits`, which the CLI does not
+  make_models.py                       #   binary-STL test cubes
+  gcode_diff.py                        #   the five comparisons
+  accepted.py                          #   registry of known differences, with reasons
 ifast-orca-profile-handoff.md          # the spec
 README.md                              # provenance: which value came from where
 TODO.md                                # every unverified value
 ```
 
-`.gitignore` excludes `/.idea/`, `*.iml` (JetBrains-opened project), and `/out/` for
-validation output. `.gitattributes` protects the byte-exactness of `reference/**`.
+`.gitignore` excludes `/.idea/`, `*.iml` (JetBrains-opened project), `/out/` for
+validation output, and `/00000.log`, the fixed-name log the OrcaSlicer CLI drops in its
+working directory. `.gitattributes` protects the byte-exactness of `reference/**`.
 
 ## Conventions
 
@@ -366,13 +372,50 @@ validation output. `.gitattributes` protects the byte-exactness of `reference/**
 - OrcaSlicer profiles are AGPL-3.0 and derive from Bambu Studio and PrusaSlicer upstream.
   Preserve that attribution chain in `README.md`.
 
-## Validation (task 6)
+## Validation (task 6, done)
 
-Determine the Orca CLI invocation from `--help` and the clone's docs — **do not assume
-flag names**, they have changed across versions. The check must slice a test model,
-then diff the output against the reference G-code ignoring coordinates and comments,
-reporting differences in the start block, end block, temperature commands, and M-codes.
-Repeat for a two-material model against `dual-extruder.gcode`.
+`bash scripts/validate.sh` → `out/validate/report.md`. Five checks (start block, end
+block, temperature commands, code census, tool-change sequence), each difference
+classified ACCEPTED / KNOWN / UNEXPECTED by `scripts/accepted.py`; only UNEXPECTED
+fails the run, and nothing is ever hidden (hard rule 7). Deterministic across runs, and
+verified to catch a regression. Full description in `README.md` §Validation.
+
+The invocations, established empirically — **the flag names below are the ones that
+work; `--load_settings` with an underscore is rejected** (`Config.cpp:238` registers
+only the dash form, despite the `--help` text):
+
+```bash
+# single-extruder — the target version
+flatpak run com.orcaslicer.OrcaSlicer \
+  --load-settings "machine.json;process.json" --load-filaments "pla.json" \
+  --slice 0 --export-3mf out.gcode.3mf --outputdir <dir> cube20.stl
+
+# dual-extruder — one filament id per positional model file
+<orca> --load-settings "machine.json;process.json" \
+  --load-filaments "pla.json;petg.json" --load-filament-ids "1,2" --arrange 1 \
+  --slice 0 --export-3mf out.gcode.3mf --outputdir <dir> cube_a.stl cube_b.stl
+```
+
+`--load-filament-ids` sets `ModelObject::config["extruder"]` per *input file*
+(`v2.4.2:OrcaSlicer.cpp:1798`–`1807`, `:1839`–`1849`), 1-based, one id per positional
+file or `CLI_INVALID_PARAMS`; it is rejected if a `.3mf` is among the inputs
+(`:1624`–`1631`). Loading two filaments alone does nothing to the objects — there is no
+auto-distribution path in the CLI.
+
+**The flatpak sandbox cannot see `/tmp`.** Every input and output path must live under
+the repo (or another location the sandbox can reach), or the slicer reports
+`No such file` and exits `-3`.
+
+**The 2.4.2 CLI aborts on *any* two-filament slice** with a `std::vector` out-of-range
+assertion. Upstream bug, not ours — it reproduces with OrcaSlicer's own stock
+`Lulzbot Taz Pro Dual 0.5 nozzle` preset and with a single-nozzle machine. The harness
+falls back to the 2.3.1 AppImage (`ORCA_DUAL_CMD`) for the dual case and labels the
+result. Details and the full list of what was ruled out are in `TODO.md`
+§"Found by task 6".
+
+Block boundaries used by the harness are unique in all three files: the start block is
+`;T0` … `M141 S0` inclusive, the end block `M107 T-2` … `;End of Gcode`, and
+OrcaSlicer's `; CONFIG_BLOCK_START` trailer is truncated before any comparison.
 
 ## Definition of done
 
