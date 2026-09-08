@@ -47,12 +47,15 @@ Values that do NOT come from that chain come from one of two QIDI sources, both
 of which are QIDI Technology's own published output for this machine and are
 reproduced here unmodified as reference material, not as part of the profile:
 
-  reference/qidi-profiles/    QIDI's published legacy profile bundle
-                              (PrusaSlicer / Cura / Simplify3D / ideaMaker)
-  reference/*.gcode           G-code exported by QIDI Print for the i-Fast
+  QIDI's published legacy profile bundle (PrusaSlicer / Cura / Simplify3D /
+  ideaMaker). It is NOT redistributed in this repository; see
+  reference/qidi-profiles.md for where QIDI publishes it.
 
-Both directories are read-only inputs. See README.md for which value came from
-which source, and TODO.md for the values that are still unverified.
+  reference/*.gcode           G-code exported by QIDI Print for the i-Fast,
+                              a read-only input reproduced here unmodified
+
+See README.md for which value came from which source, and TODO.md for the values
+that are still unverified.
 
 NO AFFILIATION
 --------------

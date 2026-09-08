@@ -100,3 +100,19 @@ a rule for them would also excuse a CLI regression. Two of them matter:
 2. The dual file's tool-change *count* and surface assignment differ from the reference's
    by construction — the user assigned extruders to different surfaces — so tool-change
    counts (51 against 49) are a property of the job, not of the profile.
+
+## Known drift: `printer_notes` (2026-09-08)
+
+Both files embed the machine profile's `printer_notes` string in their
+`; CONFIG_BLOCK`. On 2026-09-08 that string was reworded — QIDI's published profile
+bundle stopped being redistributed in this repo, so the note now names
+`PrusaSlicer_fast.ini` and [`reference/qidi-profiles.md`](../../reference/qidi-profiles.md)
+instead of an in-repo path.
+
+These samples therefore no longer byte-match
+[`profiles/machine/QIDI i-Fast 0.4 nozzle.json`](../../profiles/machine/QIDI%20i-Fast%200.4%20nozzle.json).
+The drift is confined to that one comment string: no sliced geometry, no G-code the
+machine executes, and nothing either file was captured to prove. Only the GUI can
+regenerate them, so they are left as they are and should be re-sliced at the next GUI
+session — which [`intent/0002`](../../intent/0002-first-print-and-physical-verification.md)
+already requires for the first print.

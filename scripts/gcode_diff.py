@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Diff a sliced G-code file against a QIDI Print reference export.
 
-Implements the four comparisons the handoff asks for — start block, end block,
+Implements the four comparisons the task brief asks for — start block, end block,
 temperature commands, M-codes used — plus a fifth for the dual-extruder case,
 the tool-change sequence, and two added after the first-print review: the
 motion envelope of the print body (travel, retraction and Z feedrates, which
-the handoff's four checks cannot see) and, for the dual case, whether every
+task 6's four checks cannot see) and, for the dual case, whether every
 tool change leaves the incoming extruder fully primed.  Coordinates and
-comments are ignored where the handoff says to ignore them, and *not* ignored
+comments are ignored where the task brief says to ignore them, and *not* ignored
 inside the start and end blocks, which are our own verbatim strings and whose
 comments carry meaning.
 
@@ -39,7 +39,7 @@ END_FIRST, END_LAST = "M107 T-2", ";End of Gcode"
 
 TEMPERATURE = re.compile(r"^(M104|M109|M140|M190|M141|M191)\b")
 # Numeric arguments that are positions, distances or feedrates — the things the
-# handoff means by "coordinates".  S/P/R/T are left alone: they carry the
+# task brief means by "coordinates".  S/P/R/T are left alone: they carry the
 # temperatures, fan speeds and tool indices the comparison is actually about.
 COORD = re.compile(r"(?<=[XYZEABFIJ])-?\d*\.?\d+")
 CODE = re.compile(r"^([GM]\d+|T-?\d+)")
@@ -457,7 +457,7 @@ def check_motion(report, ref, ours, ref_path, our_path):
     sec = report.section(
         "Motion envelope",
         "Feedrates and retractions in the print body (start and end blocks excluded), "
-        "which the four handoff checks cannot see.  Travel is the only place the base "
+        "which the four task-6 checks cannot see.  Travel is the only place the base "
         "OrcaSlicer profile asked this machine to move faster than QIDI Print ever "
         "does; a retract or a Z-hop the reference does not have shows up here too.")
     def hops(env):

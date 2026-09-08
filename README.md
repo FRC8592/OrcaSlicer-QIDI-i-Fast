@@ -1,5 +1,10 @@
 # QIDI i-Fast — OrcaSlicer profile
 
+⚠️ **Nothing has been printed with this profile yet.** It is derived and validated
+against QIDI Print's own G-code, not proven on a machine. Your first print off it should
+be single-extruder PLA, a small model, supervised, chamber heater off. See
+[`TODO.md`](TODO.md) for every value that still needs checking.
+
 > **Status: machine, process and filament profiles written, and validated by a
 > repeatable harness against the QIDI Print reference exports.** A single-extruder slice
 > emits an end block **byte-identical** to the reference and a start block identical
@@ -17,7 +22,7 @@
 >
 > Installing is a copy of seven JSON files — see [Installation](#installation-linux).
 > [`TODO.md`](TODO.md) lists every unverified value and every open question;
-> [`ifast-orca-profile-handoff.md`](ifast-orca-profile-handoff.md) is the spec.
+> [`intent/`](intent/) records why each piece of work was started.
 
 An OrcaSlicer printer profile (machine + process + minimal filament) for the
 **QIDI i-Fast**, a machine OrcaSlicer does not ship a profile for.
@@ -30,6 +35,18 @@ An OrcaSlicer printer profile (machine + process + minimal filament) for the
 
 The seven JSON files under `profiles/` map one-to-one onto OrcaSlicer's user config
 directories. Installing is a copy — there is nothing to build and nothing to edit.
+
+Take them from a **release** rather than a clone if you only want the profile:
+`OrcaSlicer-QIDI-i-Fast-<tag>.zip` unpacks to `machine/`, `process/` and `filament/`
+folders that map straight onto the directories in step 2, alongside this README, the
+LICENSE and the NOTICE. Each release also carries a `.sha256`; verify it with
+`sha256sum -c OrcaSlicer-QIDI-i-Fast-<tag>.zip.sha256`.
+
+Tags are **`<orca_version>_<index>`** — `2.4.2_1` is the first release of the profile for
+OrcaSlicer 2.4.2, `2.4.2_2` the second against that same OrcaSlicer. The OrcaSlicer
+version a release targets is therefore visible before you download it, and the release
+workflow refuses to build an artifact whose version this README does not claim to target
+(`.github/workflows/release.yml`).
 
 ### 1. Prerequisites
 
@@ -139,13 +156,14 @@ every speed, acceleration and retraction behaviour not listed here.
 Five abbreviations for the source column:
 
 - **base** — `Qidi X-Max 0.4 nozzle` → `fdm_qidi_common` → `fdm_machine_common`, `v2.4.2`
-- **ini** — `reference/qidi-profiles/prusaslicer/PrusaSlicer_fast.ini`, QIDI's own
-  published i-Fast PrusaSlicer profile
+- **ini** — `prusaslicer/PrusaSlicer_fast.ini`, QIDI's own published i-Fast PrusaSlicer
+  profile. Not redistributed here; [`reference/qidi-profiles.md`](reference/qidi-profiles.md)
+  says where to download it and checksums what these notes were written against
 - **G-code** — `reference/single-extruder.gcode` / `reference/dual-extruder.gcode`,
   extracted verbatim in [`reference/extracted-gcode.md`](reference/extracted-gcode.md)
-- **Cura** — `qidi/definitions/qidi.def.json` and `i-fast.def.json` inside
-  `reference/qidi-profiles/CURA/qidi.zip`, the printer definition QIDI Print (a Cura
-  fork) slices the i-Fast with. It is the *source* of the reference G-code's speeds and
+- **Cura** — `qidi/definitions/qidi.def.json` and `i-fast.def.json` inside `CURA/qidi.zip`
+  in that same bundle, the printer definition QIDI Print (a Cura fork) slices the i-Fast
+  with. It is the *source* of the reference G-code's speeds and
   retraction, so it corroborates what the G-code shows rather than adding to it
 - **Orca** — forced by OrcaSlicer's own behaviour, argued in the section named
 
@@ -176,7 +194,7 @@ Five abbreviations for the source column:
 | `extruder_offset` | `["0x0","0x0"]` | ini `extruder_offset = 0x0,0x0`. The firmware owns the real offsets; a non-zero value here double-applies |
 | `gcode_flavor` | `marlin` | ini `gcode_flavor = marlin` (= base) |
 | `use_relative_e_distances` | `"0"` | ini `use_relative_e_distances = 0`, and `M82` + an absolute `E` on all 1855 extrusion moves of the single reference. **Necessary, not cosmetic:** the option defaults to `true` and the whole base chain leaves it unset |
-| `nozzle_type` | `["brass","brass"]` | The handoff's "assume the standard brass head" — an instruction, not a measurement. The base says `hardened_steel`. Affects only Orca's abrasion warnings. `TODO(verify)` |
+| `nozzle_type` | `["brass","brass"]` | The brief's "assume the standard brass head" ([`intent/0001`](intent/0001-orcaslicer-profile-for-the-ifast.md)) — an instruction, not a measurement. The base says `hardened_steel`. Affects only Orca's abrasion warnings. `TODO(verify)` |
 
 `single_extruder_multi_material` and `nozzle_diameter` have to agree: with SEMM off,
 `Preset::normalize` counts *extruders* from the length of the `nozzle_diameter` array
@@ -339,7 +357,8 @@ the filename, `inherits`, `from` `User`, `instantiation` `true`, `version` `02.0
 Each is a thin override that changes **eight values**. Everything else — every printing
 speed, line width, shell count and infill setting — is inherited from
 `<name> @Qidi XMax` → `fdm_process_qidi_common` → `fdm_process_common` unchanged. Per the
-handoff, nothing is converted from QIDI's Cura profile. The inherited line widths are
+project scope ([`intent/0001`](intent/0001-orcaslicer-profile-for-the-ifast.md)), nothing
+is converted from QIDI's Cura profile. The inherited line widths are
 independently corroborated by `PrusaSlicer_fast.ini`: `initial_layer_line_width` 0.42 =
 `first_layer_extrusion_width`, `inner_wall_line_width` 0.45 = `perimeter_extrusion_width`,
 `sparse_infill_line_width` 0.45 = `infill_extrusion_width`, `top_surface_line_width` 0.4 =
@@ -392,8 +411,8 @@ stock `Qidi X-Max 0.4 nozzle` printer in the GUI.
 
 One preset: **`QIDI Generic PLA @QIDI i-Fast`**, inheriting
 `Qidi Generic PLA` → `fdm_filament_pla` → `fdm_filament_common` from the `v2.4.2` Qidi
-bundle. Deliberately minimal, per the handoff — flow ratio, retraction and per-material
-tuning belong after a first successful print, not here.
+bundle. Deliberately minimal, per the project scope — flow ratio, retraction and
+per-material tuning belong after a first successful print, not here.
 
 | Key | Value | Source |
 |---|---|---|
@@ -425,8 +444,8 @@ variant — `cool_plate_temp`, `textured_cool_plate_temp`, `eng_plate_temp`,
 `enable_pressure_advance: 1` with `pressure_advance: 0.031`, which on a `marlin` flavor
 makes OrcaSlicer emit `M900 K0.031` (`v2.4.2:GCodeWriter.cpp:388`–`389`). Neither
 reference export contains an `M900`, and neither does any of QIDI's published i-Fast
-profiles — the 0.031 is an Orca vendor value with no i-Fast provenance, and the handoff
-puts pressure advance out of scope until after a first print. `pressure_advance` itself is
+profiles — the 0.031 is an Orca vendor value with no i-Fast provenance, and the project
+scope puts pressure advance out of scope until after a first print. `pressure_advance` itself is
 left inherited so the number survives for later tuning; it is simply unused. Recorded in
 `TODO.md`.
 
@@ -555,7 +574,7 @@ bash scripts/validate.sh          # writes out/validate/report.md
 
 The harness slices the shipped profiles and diffs the result against
 `reference/single-extruder.gcode` and `reference/dual-extruder.gcode`, ignoring
-coordinates and comments where the handoff says to. It needs nothing but Python 3, a
+coordinates and comments where the task brief says to. It needs nothing but Python 3, a
 `bash`, and an OrcaSlicer install with the QIDI vendor enabled; `out/` is regenerated
 from scratch on every run and is gitignored.
 
@@ -588,7 +607,7 @@ Environment overrides: `ORCA_CMD`, `ORCA_SYSTEM_DIR`, `ORCA_DUAL_CMD`, `DUAL_FIL
    set of (length, feedrate) retracts and primes, Z-only move speed, and Z changes per
    printing level (a hop detector: 1.0 means Z moves only between layers). Added by the
    first-print review, which found the base profile travelling at 500 mm/s — something
-   the four handoff checks, which look at M-codes and blocks, could not see.
+   the four original task-6 checks, which look at M-codes and blocks, could not see.
 7. **Tool-change priming** (dual only) — for every body tool change, the incoming
    extruder's retract debt at its first printing move, summed over all its retracts,
    wipes, unretracts and primes. Must be 0; it has no entry in the registry.
@@ -599,8 +618,8 @@ command, as they are to the firmware.
 
 ### How differences are classified
 
-Hard rule 7 of the handoff is "report every difference; do not suppress diffs to make a
-check pass", so `scripts/accepted.py` decides a difference's **classification**, never
+Hard rule 7 ([`CLAUDE.md`](CLAUDE.md) §"Hard rules") is "report every difference; do not
+suppress diffs to make a check pass", so `scripts/accepted.py` decides a difference's **classification**, never
 its visibility. Every difference appears in the report either way.
 
 | Verdict | Meaning | Fails the run? |
@@ -729,7 +748,7 @@ profiles/filament/   QIDI Generic PLA @QIDI i-Fast      -> <config>/user/default
 reference/           read-only inputs, never edited
   single-extruder.gcode, dual-extruder.gcode            QIDI Print exports: ground truth
   extracted-gcode.md                                    the verbatim extraction, with commentary
-  qidi-profiles/                                        QIDI's published legacy bundle
+  qidi-profiles.md                                      how to fetch QIDI's own bundle
 
 samples/gui-2.4.2/   two GUI-sliced G-code files from OrcaSlicer 2.4.2, with a note
                      on what they prove. The harness cannot produce these.
@@ -737,13 +756,14 @@ samples/gui-2.4.2/   two GUI-sliced G-code files from OrcaSlicer 2.4.2, with a n
 scripts/             the validation harness -> out/validate/report.md
   validate.sh  flatten.py  make_models.py  gcode_diff.py  accepted.py
 
+.github/workflows/   release.yml: packages profiles/ into the release zip on a tag
+
 intent/              proto-specs: why each piece of work was started, written first
                      TEMPLATE.md is the shape; NNNN-*.md are the intents themselves
 
 README.md            this file: provenance, install, validation
 TODO.md              every unverified value, every open question, every decision
-CLAUDE.md            environment and recon notes for anyone picking the work up
-ifast-orca-profile-handoff.md   the original spec
+CLAUDE.md            environment, recon notes and the hard rules
 LICENSE  NOTICE      AGPL-3.0 and the attribution chain
 ```
 

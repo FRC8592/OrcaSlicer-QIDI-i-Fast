@@ -38,9 +38,10 @@ answers get recorded.
 
 ## Constraints
 
-- **Single extruder, PLA, small model, supervised, chamber heater off.** From
-  [`ifast-orca-profile-handoff.md`](../ifast-orca-profile-handoff.md) §"Note for the
-  human": get that clean before trusting anything else in the repo.
+- **Single extruder, PLA, small model, supervised, chamber heater off.** The original
+  brief's closing instruction, carried into
+  [`0001`](0001-orcaslicer-profile-for-the-ifast.md) §"How the work was decomposed":
+  get that clean before trusting anything else in the repo.
 - **Hard rule 8** ([`CLAUDE.md`](../CLAUDE.md) §"Hard rules"): ask about the physical
   machine, don't guess. That rule is the reason this intent exists as a separate piece of
   work instead of being closed out from a desk.

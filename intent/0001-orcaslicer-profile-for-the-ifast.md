@@ -1,11 +1,12 @@
 # Intent: an OrcaSlicer profile for the QIDI i-Fast
 Author: Brad Sneade. Status: **delivered** (2026-09-07).
 
-> Written retroactively on 2026-09-08 by extracting the intent half of
-> [`ifast-orca-profile-handoff.md`](../ifast-orca-profile-handoff.md), which predates
-> this convention and fuses intent with design. **The handoff is still the authoritative
-> spec** — its seven tasks, hard rules and definition of done all live there. This file
-> records only what was wanted and why, before any of that was decided.
+> Written retroactively on 2026-09-08 from `ifast-orca-profile-handoff.md`, the original
+> brief, which predated this convention and fused intent with design. That file was
+> folded into this one and [`CLAUDE.md`](../CLAUDE.md) on 2026-09-08 and removed from the
+> repository (and from its history) before publication. **This file is now the record of
+> what was wanted, why, and how the work was broken up**; the hard rules and the
+> definition of done live in `CLAUDE.md`, which governs.
 
 ## Problem
 
@@ -27,6 +28,21 @@ where every value came from and a list of what still needs eyes on the machine.
 Every value derived from the legacy base profile, QIDI's own published profiles, or
 QIDI Print's reference exports. Nothing invented, and nothing plausible-looking borrowed
 from another printer.
+
+## Inputs assumed present
+
+The brief required all of these before any work started, and required stopping to ask
+rather than proceeding on assumptions if one was missing:
+
+1. `reference/single-extruder.gcode` — exported from QIDI Print for the i-Fast: simple
+   model, one extruder, PLA. **The ground truth for machine behaviour.**
+2. `reference/dual-extruder.gcode` — the same, but a two-material model forcing at least
+   one tool change. Ground truth for the tool-change sequence.
+3. QIDI's published legacy profile bundle for the i-Fast (PrusaSlicer `.ini`, Cura,
+   Simplify3D `.fff`, ideaMaker) from the QIDI software page. Not redistributed in this
+   repo — see [`../reference/qidi-profiles.md`](../reference/qidi-profiles.md).
+4. A local clone of the OrcaSlicer repository.
+5. The OrcaSlicer version the user is running, since profiles are version-sensitive.
 
 ## Affected users and systems
 
@@ -51,6 +67,46 @@ The eight hard rules, one line each — the full statements are in
 8. Ask before guessing about the physical machine.
 
 Also: target OrcaSlicer 2.4.2 specifically, since profiles are version-sensitive.
+
+## How the work was decomposed
+
+Seven tasks, all delivered. `README.md`, `TODO.md` and `scripts/` cite them by number,
+so the numbering is kept:
+
+1. **Recon the schema.** Find the QIDI vendor profiles in the OrcaSlicer clone; write up
+   which QIDI machines are present with their build volumes, the flattened `inherits`
+   chain, what a user profile must look like for Orca to load it rather than silently
+   reject it, and where user profiles live on Linux. Then pick the base — X-CF Pro or
+   X-Max — and justify it. Never a Klipper-generation QIDI. → `CLAUDE.md` §"Recon results".
+2. **Extract ground truth from the reference G-code.** Pull the start block, end block,
+   chamber commands, heating order, every non-standard M-code, and the complete
+   tool-change sequence out of the two exports **verbatim**, into
+   `reference/extracted-gcode.md`. Use those blocks as-is: no tidying, no substituting
+   equivalents from another printer.
+3. **Build the machine profile.** From the chosen base, change only what the hardware
+   demands: build volume 330 × 250 × 320, two extruders as a multi-tool printer, zero
+   extruder offsets, temperatures for the standard brass head, the G-code blocks from
+   task 2, and motion limits carried over unraised.
+4. **Build process profiles.** 0.20 mm standard at minimum, more only if the base's
+   structure made it trivial. Inherit speeds from the stock QIDI process rather than
+   importing them from Cura, whose speed semantics do not map cleanly.
+5. **Build a minimal filament profile.** One generic PLA inheriting Orca's, with temps
+   from the QIDI reference. "Resist producing a full material library — that's tuning
+   work that belongs after the machine is proven."
+6. **Validate.** Work out the CLI invocation from `--help` rather than assuming flag
+   names; slice a test model, diff the result against each reference ignoring coordinates
+   and comments, and report every difference in the start block, end block, temperature
+   commands and M-codes. Repeat for a two-material model. Suppressing a diff to make the
+   check pass is forbidden — hard rule 7.
+7. **Package.** The JSONs in a layout mapping onto Orca's user config dirs, Linux install
+   instructions, a README documenting where every value came from and what is still
+   unverified, `TODO.md`, and the AGPL-3.0 attribution chain back through Bambu Studio and
+   PrusaSlicer.
+
+The brief closed with an instruction that is not a task but a precondition on trusting
+any of it: **the first print off this profile should be single extruder, PLA, a small
+model, supervised, with the chamber heater off.** That became
+[`0002-first-print-and-physical-verification.md`](0002-first-print-and-physical-verification.md).
 
 ## Open questions
 

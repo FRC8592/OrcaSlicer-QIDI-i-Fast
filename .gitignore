@@ -18,3 +18,10 @@ __pycache__/
 
 # OrcaSlicer CLI debris (fixed name, written to the working directory)
 /00000.log
+
+# QIDI's published profile bundle: downloaded, never committed.
+# See reference/qidi-profiles.md.
+/reference/qidi-profiles/
+
+# release workflow output
+/dist/

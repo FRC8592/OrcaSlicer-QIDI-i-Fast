@@ -1,0 +1,64 @@
+# Package the profiles for a tagged release.
+#
+# There is no validation CI: scripts/validate.sh needs an OrcaSlicer install with the
+# QIDI vendor bundle enabled, which a runner cannot provide. Packaging is plain zip.
+#
+# Tags are <orca_version>_<index> — e.g. 2.4.2_1, then 2.4.2_2 for the second release
+# of the profile against the same OrcaSlicer.
+name: release
+
+on:
+  push:
+    tags:
+      - '*.*.*_*'          # GitHub tag filters are globs; the strict check is below
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate tag and payload
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
+          if [[ ! "$TAG" =~ ^([0-9]+\.[0-9]+\.[0-9]+)_([0-9]+)$ ]]; then
+            echo "::error::tag must be <orca_version>_<index>, e.g. 2.4.2_1 (got '$TAG')"
+            exit 1
+          fi
+          ORCA="${BASH_REMATCH[1]}"
+          if ! grep -q "OrcaSlicer ${ORCA}" README.md; then
+            echo "::error::README.md does not target OrcaSlicer ${ORCA}; refusing to ship an artifact claiming a version nobody validated"
+            exit 1
+          fi
+          for dir in machine:1 process:5 filament:1; do
+            d="${dir%%:*}"; want="${dir##*:}"
+            got=$(find "profiles/$d" -maxdepth 1 -name '*.json' | wc -l)
+            [[ "$got" -eq "$want" ]] || { echo "::error::profiles/$d has $got json files, expected $want"; exit 1; }
+          done
+          echo "NAME=OrcaSlicer-QIDI-i-Fast-${TAG}" >> "$GITHUB_ENV"
+
+      - name: Build the archive
+        run: |
+          set -euo pipefail
+          mkdir -p "dist/$NAME"
+          cp -r profiles/machine profiles/process profiles/filament "dist/$NAME/"
+          cp README.md LICENSE NOTICE "dist/$NAME/"
+          # reproducible: no extra attributes, and every mtime pinned to the tagged commit
+          find "dist/$NAME" -exec touch -d "$(git log -1 --format=%cI)" {} +
+          cd dist
+          zip -X -r -q "$NAME.zip" "$NAME"
+          sha256sum "$NAME.zip" > "$NAME.zip.sha256"
+          cat "$NAME.zip.sha256"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" --generate-notes \
+            --title "$GITHUB_REF_NAME" \
+            "dist/$NAME.zip" "dist/$NAME.zip.sha256"

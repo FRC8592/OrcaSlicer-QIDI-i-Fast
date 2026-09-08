@@ -6,7 +6,9 @@ see the "derive, don't invent" rule in [`CLAUDE.md`](CLAUDE.md).
 
 ## Next steps
 
-Handoff tasks, with current state. **All seven are done**, and a **first-print review**
+The seven tasks, with current state
+([`intent/0001`](intent/0001-orcaslicer-profile-for-the-ifast.md) §"How the work was
+decomposed"). **All seven are done**, and a **first-print review**
 (2026-09-07) has since brought the print body's motion, the idle-nozzle temperature and
 one fan command into line with the reference — see **Found by the first-print review**
 below. What remains is not slicer work: a first print, and the physical checks listed
@@ -53,7 +55,7 @@ under **Open questions for the human** and **Unverified profile values** below.
       of its stock `@Qidi XMax` counterpart. Three keys only:
       `initial_layer_print_height` `0.3`, `enable_prime_tower` `0`, and a
       `compatible_printers` list naming **both** our printer and the base. Speeds and
-      line widths are inherited, not imported from Cura, per the handoff.
+      line widths are inherited, not imported from Cura, per the project scope.
       All five verified by CLI slice: exit 0, first layer at `Z0.3` over their own
       pitch, no prime tower. Three machine-profile defects were found and fixed in the
       process — see **Found by task 4** below.
@@ -62,7 +64,7 @@ under **Open questions for the human** and **Unverified profile values** below.
       (both `nozzle_temperature` and `nozzle_temperature_initial_layer`), **all twelve**
       plate-temp keys to 80 °C, `enable_pressure_advance` `0`, and a `compatible_printers`
       list naming both printers. Everything else — diameter, type, flow, fan curve,
-      volumetric limit — is inherited, per the handoff's "resist a full material library".
+      volumetric limit — is inherited, per the brief's "resist a full material library".
       Verified by CLI slice against 2.4.2: exit 0, the **end block is byte-identical** to
       `single-extruder.gcode`, and the start block differs only in the two *commented-out*
       `;M104 T1 S…` / `;M109 T1 S…` lines (200 here, 230 in the reference, whose second
@@ -130,7 +132,7 @@ under **Open questions for the human** and **Unverified profile values** below.
       circulation fan, it matters for the enclosure. Either way it is what QIDI Print does.
 
 - [ ] **Which head assembly is installed** — standard brass, or the 350 °C high-temp
-      variant? Per the handoff we default to the standard brass head, so the profile
+      variant? Per the brief we default to the standard brass head, so the profile
       ships `nozzle_type: ["brass","brass"]`; the reference G-code only ever reaches
       230 °C, so it cannot distinguish them. Needs eyes on the machine.
       (Correction: there is **no `nozzle_max_temperature` key at `v2.4.2`** — an earlier
@@ -149,7 +151,8 @@ under **Open questions for the human** and **Unverified profile values** below.
       `v2.4.2` tag of the clone, not its 2.5.0-dev working tree. Only the 2.3.1
       AppImage is installed, so 2.4.2 must be installed before load-testing.
 - [x] **Bed temperature: 80 °C**, from `reference/single-extruder.gcode` (`M140 S80`),
-      overriding the 60 °C in `reference/qidi-profiles/prusaslicer/PrusaSlicer_fast.ini`.
+      overriding the 60 °C in QIDI's `prusaslicer/PrusaSlicer_fast.ini` (see
+      [`reference/qidi-profiles.md`](reference/qidi-profiles.md)).
       G-code is ground truth. Record the discrepancy in `README.md`.
 - [x] **`A`/`B` extruder axes: not an issue.** All 5 occurrences in each reference file
       are inside the start block's prime line; the print body and the tool change use
@@ -256,7 +259,7 @@ under **Open questions for the human** and **Unverified profile values** below.
 
 - [x] **Filament profile: one preset, `QIDI Generic PLA @QIDI i-Fast`** (2026-09-07),
       inheriting `Qidi Generic PLA` → `fdm_filament_pla` → `fdm_filament_common`. Five
-      overrides only. Per the handoff: "Resist producing a full material library — that's
+      overrides only. Per the brief: "Resist producing a full material library — that's
       tuning work that belongs after the machine is proven."
 - [x] **Nozzle 200 °C, first layer and body alike.** Two independent sources agree:
       `M104 T0 S200` / `M109 T0 S200` in both references, and
@@ -267,9 +270,9 @@ under **Open questions for the human** and **Unverified profile values** below.
       `pressure_advance: 0.031`, which on a `marlin` flavor emits `M900 K0.031`
       (`v2.4.2:GCodeWriter.cpp:388`–`389`). There is **no `M900` anywhere** in either
       reference export, in `PrusaSlicer_fast.ini`, or in the Simplify3D `.fff` — so the
-      0.031 has no i-Fast provenance, and the handoff puts pressure advance out of scope
-      until after a first print. `pressure_advance` itself is left inherited (unused) so
-      the number survives for later tuning. See the `TODO(verify)` below.
+      0.031 has no i-Fast provenance, and the project scope puts pressure advance out
+      of scope until after a first print. `pressure_advance` itself is left inherited
+      (unused) so the number survives for later tuning. See the `TODO(verify)` below.
 - [x] **Fan settings stay inherited.** `fdm_filament_pla` gives
       `close_fan_the_first_x_layers` `1` and `full_fan_speed_layer` `3`, close to but not
       equal to the reference's off/50 %/100 % ramp over layers 0–2. §7 of the extraction
@@ -279,7 +282,8 @@ under **Open questions for the human** and **Unverified profile values** below.
 - [x] **Match QIDI Print's motion for the first print** (2026-09-07, user). The base
       OrcaSlicer profile asked the machine for things the reference never does; each is
       now set to what the reference G-code shows, with QIDI's Cura definition
-      (`reference/qidi-profiles/CURA/qidi.zip:qidi/definitions/qidi.def.json`) as the
+      (`CURA/qidi.zip:qidi/definitions/qidi.def.json` in QIDI's published bundle — see
+      [`reference/qidi-profiles.md`](reference/qidi-profiles.md)) as the
       corroborating source, and none of it is a *tuned* value:
       - `travel_speed` **100** (was 500 from `0.20mm Standard @Qidi XMax`; reference
         `F6000`, Cura `speed_travel 100`, ini 130 — see the `TODO(verify)` below);
@@ -386,7 +390,7 @@ _Populated as profiles are written._
       value. Every other `machine_max_*` matches the ini exactly — this is the lone
       discrepancy.
 - [ ] **`TODO(verify):` `nozzle_type: ["brass","brass"]` assumes the standard head.**
-      Follows the handoff's "assume the standard head" instruction, not a measurement.
+      Follows the brief's "assume the standard head" instruction, not a measurement.
       See the open head-assembly question above. Only affects Orca's abrasion warnings.
 - [x] **Resolved: `default_filament_profile` now points at a preset that exists.**
       `["QIDI Generic PLA @QIDI i-Fast"]` — task 5 shipped the filament preset under
@@ -535,13 +539,13 @@ it. All three are fixed in `profiles/machine/QIDI i-Fast 0.4 nozzle.json`.
       `enable_pressure_advance: ["0"]`. The stock `Qidi Generic PLA` — which *is* declared
       compatible with the legacy `Qidi X-Max 0.4 nozzle` — enables it at `K0.031`, so
       OrcaSlicer's own vendor believes a legacy QIDI board accepts `M900`. We disable it
-      because no QIDI i-Fast source emits `M900` and because PA is explicitly out of scope
-      per the handoff. Two things to check after a first print: whether the Chitu board
-      actually implements `M900`, and whether 0.031 is anywhere near right for this
-      extruder. Turning it back on is a one-key change.
+      because no QIDI i-Fast source emits `M900` and because PA is explicitly out of
+      scope for this project. Two things to check after a first print: whether the Chitu
+      board actually implements `M900`, and whether 0.031 is anywhere near right for
+      this extruder. Turning it back on is a one-key change.
 - [ ] **`TODO(verify):` `filament_flow_ratio` `0.98` is inherited and contradicts QIDI.**
       `PrusaSlicer_fast.ini` says `extrusion_multiplier = 1,1`. Both are sourced values,
-      so neither is an invention; we keep the inherited 0.98 because the handoff scopes
+      so neither is an invention; we keep the inherited 0.98 because the project scopes
       flow calibration out until after a first print. Worth 2 % of extrusion — check it
       on the first print before tuning anything else.
 - [ ] **`TODO(verify):` the fan curve is OrcaSlicer's, not QIDI's.** See **Decided** and
@@ -851,8 +855,9 @@ Packaging changed no profile value. It checked four things and added two files.
 ### Found by the first-print review (2026-09-07)
 
 A review of what the sliced *body* asks the machine to do, against the reference and
-against QIDI's Cura definition (`reference/qidi-profiles/CURA/qidi.zip`, not mined
-before). The decisions are under **Decided**; what is still unverified:
+against QIDI's Cura definition (`CURA/qidi.zip` in QIDI's published bundle, not mined
+before — see [`reference/qidi-profiles.md`](reference/qidi-profiles.md)). The decisions
+are under **Decided**; what is still unverified:
 
 - [ ] **`TODO(verify):` `travel_speed` 100 — the ini says 130.** Two QIDI sources
       disagree: the reference G-code (and the Cura definition that produced it) says
@@ -900,6 +905,45 @@ Not unverified, but found and worth keeping:
       they reappear. Verified: restoring `z_hop` 0.4 and `default_jerk` 8 fails with the
       hop detector at 12.46 and `M205` in the census.
 
+### Found by preparing for publication (2026-09-08)
+
+Publishing the repo as `OrcaSlicer-QIDI-i-Fast`. No profile value changed except one
+comment string.
+
+- [x] **QIDI's published profile bundle is no longer in the repo.** All 28 files under
+      `reference/qidi-profiles/` were QIDI Technology's own distribution, redistributed
+      here — 38.5 MB, 95 % of the repository, and not ours to host.
+      [`reference/qidi-profiles.md`](reference/qidi-profiles.md) replaces it with the
+      download location, a SHA-256 manifest of exactly what these notes were written
+      against, and the three files the provenance actually depends on
+      (`prusaslicer/PrusaSlicer_fast.ini`, and `qidi.def.json` / `i-fast.def.json` inside
+      `CURA/qidi.zip`). The directory is now git-ignored, so a re-download for local work
+      cannot be committed back. Every claim in `README.md` remains checkable; it just
+      costs a download first.
+- [x] **`ifast-orca-profile-handoff.md` is gone**, folded into
+      [`intent/0001`](intent/0001-orcaslicer-profile-for-the-ifast.md) (objective, inputs,
+      the seven tasks) and `CLAUDE.md` (hard rules, definition of done), which is now
+      authoritative for both. It predated the `intent/` convention and fused intent with
+      design; the doc-roles table in `CLAUDE.md` no longer lists it.
+- [ ] **`TODO(verify):` a `.orca_printer` bundle would not import as-is.** The release
+      artifact is a plain zip matching the documented copy-in-place install, because
+      Orca's one-click import path will not take our presets unmodified.
+      `PresetBundle::import_json_presets` (`v2.4.2:PresetBundle.cpp:1450`+) routes each
+      file by whether the config **it alone** carries `printer_settings_id`,
+      `print_settings_id` or `filament_settings_id`, *before* `inherits` is applied — and
+      all seven of ours omit those keys, inheriting them instead. A bundle built straight
+      from `profiles/` would therefore import **nothing**, logging only
+      `Preset type is unknown, not loading`. Orca sets the key to the preset's own name
+      when it saves a user preset (`Preset.cpp:2780`), so injecting it at package time is
+      derivable rather than invented — but it cannot be confirmed without a GUI import,
+      which the harness cannot do. Worth its own intent before anyone builds it.
+- [x] **The GUI samples now differ from the profile by one comment string.** The machine
+      profile's `printer_notes` was reworded when the bundle stopped being redistributed,
+      and both files in `samples/gui-2.4.2/` embed the old wording in their
+      `; CONFIG_BLOCK`. Nothing sliced changed. Recorded in
+      [`samples/gui-2.4.2/README.md`](samples/gui-2.4.2/README.md); they are re-sliced at
+      the next GUI session, which the first print needs anyway.
+
 ### From task 2 (the reference G-code extraction)
 
 - [ ] **`TODO(verify):` `M106 T-2 S255` / `M107 T-2` — which fan is `T-2`?** `-2` is not a
@@ -925,5 +969,5 @@ Not unverified, but found and worth keeping:
       artifact and the schedule difference as known. See the task-6 entry above.
 - [ ] **`TODO(verify):` chamber heater is never used.** Both references emit only
       `M141 S0` and no `M191`. The i-Fast has an actively heated chamber; QIDI Print
-      simply does not drive it in these exports. Out of scope per the handoff, noted so
+      simply does not drive it in these exports. Out of scope per the brief, noted so
       nobody reads `M141 S0` as "the machine has no chamber heater".

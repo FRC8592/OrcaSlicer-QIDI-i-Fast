@@ -4,7 +4,7 @@
 This file changes a difference's *classification*, never its visibility: every
 entry the harness finds is printed in the report either way.  An ACCEPTED entry
 carries its reason and the document that justifies it; anything not matched here
-is UNEXPECTED and fails the run.  Hard rule 7 of the handoff — "report every
+is UNEXPECTED and fails the run.  Hard rule 7 (CLAUDE.md) — "report every
 difference, do not suppress diffs to make a check pass" — means nothing may be
 added here without a written justification that already exists in TODO.md,
 README.md or reference/extracted-gcode.md.
@@ -111,7 +111,7 @@ RULES = [
      "cubes alternating every layer), not of the profile. What matters is that "
      "body tool changes are emitted and that their shape matches; see the "
      "tool-change check.",
-     "handoff task 6"),
+     "task 6"),
     ("fixture-toolchange-temperature", ("toolchange", "temperature"), ("dual",), None,
      r"^M109 S(2[34]0|250)$",
      "FIXTURE: the temperature our change_filament_gcode blocks on is the incoming "
@@ -120,7 +120,7 @@ RULES = [
      "extracted-gcode.md §7"),
     ("toolpath-speeds", ("motion",), ("dual",), None, r"^printing: max F: .*",
      "FIXTURE: per-feature print speeds are inherited from the stock @Qidi XMax "
-     "process and deliberately not converted from Cura (handoff task 4). The "
+     "process and deliberately not converted from Cura (task 4). The "
      "reference's PLA walls/infill run at 30/60 mm/s, exactly ours — the "
      "single-extruder comparison must show equal maxima — but its PETG job "
      "printed at 25/50 mm/s, which no profile in this repo describes.",
@@ -132,7 +132,7 @@ RULES = [
      r"BEFORE_LAYER)|^; (printing object|stop printing object)",
      "OrcaSlicer's own G-code markers, which land inside the tool-change window. "
      "They are comments, not machine commands, and QIDI Print has no equivalent.",
-     "handoff task 6 ('ignoring ... comments')"),
+     "task 6 ('ignoring ... comments')"),
     ("orca-cooldown-suppressed", ("toolchange",), ("dual",), "ours",
      r"^; removed M104$",
      "OrcaSlicer's post-processor drops the ooze-prevention cooldown when the "
@@ -195,9 +195,9 @@ RULES = [
     # ---- toolpaths -----------------------------------------------------------
     ("toolpath-moves", ("census", "toolchange"), (), None, r"^G[01]\b",
      "Travel and extrusion move counts and coordinates: different slicer, "
-     "different toolpaths. Explicitly out of scope per the handoff's 'ignoring "
+     "different toolpaths. Explicitly out of scope per the task brief's 'ignoring "
      "coordinates'.",
-     "handoff task 6, extracted-gcode.md §8 'Accepted diffs for task 6'"),
+     "task 6, extracted-gcode.md §8 'Accepted diffs for task 6'"),
 ]
 
 # Rules whose subject is documented in TODO.md but *not settled*. They are

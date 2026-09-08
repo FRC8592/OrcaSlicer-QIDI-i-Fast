@@ -1,6 +1,7 @@
 # Ground truth extracted from the QIDI Print reference G-code
 
-Task 2 of [`../ifast-orca-profile-handoff.md`](../ifast-orca-profile-handoff.md).
+Task 2 of the work described in
+[`../intent/0001-orcaslicer-profile-for-the-ifast.md`](../intent/0001-orcaslicer-profile-for-the-ifast.md).
 
 This file is the **authority** on how the QIDI i-Fast is driven. Where it disagrees with a
 summary elsewhere in the repo, this file wins — it is transcribed directly from the two
@@ -270,7 +271,8 @@ other bed commands in either file are the two `M140 S0` in the shutdown block. A
 on T1 did not move it. So 80 °C is what QIDI Print asks for on this machine regardless of
 material, not a PLA-specific number.
 
-This contradicts `reference/qidi-profiles/prusaslicer/PrusaSlicer_fast.ini`, which says
+This contradicts QIDI's own `prusaslicer/PrusaSlicer_fast.ini` (see
+[`qidi-profiles.md`](qidi-profiles.md)), which says
 60 °C. The G-code is ground truth; 80 °C wins. The discrepancy is recorded in `README.md`.
 
 **Chamber:** the only chamber command in either file is a single `M141 S0` — see §2. There

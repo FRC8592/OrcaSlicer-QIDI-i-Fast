@@ -11,10 +11,11 @@ against reference G-code exported from QIDI Print.
 This is a **data/config repo, not a code repo.** There is nothing to build or compile.
 The deliverable is JSON profiles plus documentation of where every value came from.
 
-The authoritative spec is [`ifast-orca-profile-handoff.md`](ifast-orca-profile-handoff.md).
-Read it before doing task work; it defines the objective, the 7 tasks, the hard rules,
-and the definition of done. This file records the environment facts and recon results
-that the handoff assumes you will discover.
+The objective, and the seven tasks the work broke into, are in
+[`intent/0001-orcaslicer-profile-for-the-ifast.md`](intent/0001-orcaslicer-profile-for-the-ifast.md).
+The hard rules and the definition of done are further down this file, which is
+authoritative for both. The rest of it records the environment facts and recon results
+that the intent assumes you will discover.
 
 ## The machine
 
@@ -285,7 +286,11 @@ Headlines:
 
 ## QIDI's published profiles
 
-`reference/qidi-profiles/` holds QIDI's legacy bundle. The i-Fast files are:
+QIDI publishes its own legacy slicer profiles, and this repo does **not** redistribute
+them. [`reference/qidi-profiles.md`](reference/qidi-profiles.md) says where to download
+the bundle and carries a checksum manifest of what these notes were written against.
+Unpack it to `reference/qidi-profiles/` — git-ignored — and the paths below resolve.
+The i-Fast files are:
 
 - `prusaslicer/PrusaSlicer_fast.ini` — **most useful**; confirms `bed_shape = 0x0,330x0,330x250,0x250`,
   `max_print_height = 320`, `extruder_offset = 0x0,0x0`, `single_extruder_multi_material = 0`,
@@ -365,7 +370,7 @@ leaves the start block alone because the block already contains `M104`/`M109`
 Other `.ini` files here (`_max`, `_plus`, `_pro`, `_cf_pro`, `_maker`, `_mates`) are
 sibling machines — useful for cross-checking, not for sourcing i-Fast values.
 
-## Hard rules (from the handoff — do not relax these)
+## Hard rules (do not relax these)
 
 1. **Derive, don't invent.** Every value traces to the base Orca profile, QIDI's published
    profiles, or the reference G-code. No source → emit `TODO(verify): <what, and why it
@@ -386,7 +391,7 @@ profiles/{machine,process,filament}/   # the deliverable JSONs, mapping onto Orc
 reference/                             # inputs: QIDI Print G-code + QIDI's published profiles
   single-extruder.gcode                #   ground truth: start/end blocks, M-codes
   dual-extruder.gcode                  #   ground truth: tool-change sequence
-  qidi-profiles/                       #   QIDI's legacy bundle (PrusaSlicer/Cura/S3D/ideaMaker)
+  qidi-profiles.md                     #   how to fetch QIDI's own bundle (not redistributed)
 samples/gui-2.4.2/                     # GUI-sliced evidence the harness cannot produce
 scripts/                               # validation harness (task 6)
   validate.sh                          #   entry point: flatten, slice, diff, report
@@ -394,8 +399,8 @@ scripts/                               # validation harness (task 6)
   make_models.py                       #   binary-STL test cubes
   gcode_diff.py                        #   the seven comparisons
   accepted.py                          #   registry of known differences, with reasons
+.github/workflows/release.yml          # packages profiles/ into the release zip on a tag
 intent/                                # proto-specs: why each piece of work was started
-ifast-orca-profile-handoff.md          # the spec
 README.md                              # provenance: which value came from where
 TODO.md                                # every unverified value
 LICENSE                                # AGPL-3.0, verbatim from OrcaSlicer v2.4.2
@@ -408,7 +413,7 @@ each one *link* to the others rather than restating them, or they drift:
 | Doc | Answers | Tense |
 |---|---|---|
 | `intent/NNNN-*.md` | Why are we about to do this? What would "done" look like? | Before |
-| `ifast-orca-profile-handoff.md` | How does it break into tasks? What are the hard rules? | Design |
+| `CLAUDE.md` | How does this machine work? What are the hard rules? | Standing |
 | `TODO.md` | What is unverified or undecided *right now*? | Live |
 | `README.md` | Where did each shipped value come from? | After |
 
@@ -498,16 +503,18 @@ OrcaSlicer's `; CONFIG_BLOCK_START` trailer is truncated before any comparison.
 ## First-print review (2026-09-07)
 
 After task 7 the print *body* was compared against the reference for the first time
-(`samples/gui-2.4.2/` vs `reference/`, plus QIDI's Cura definition in
-`reference/qidi-profiles/CURA/qidi.zip`). The base profile travelled at **500 mm/s**
-(`travel_speed` from `0.20mm Standard @Qidi XMax`, with `M203 X500` allowing it) where
-QIDI Print never exceeds 100; it also emitted the `M20x` preamble, per-feature
-`M204 S500`/`M205 X8 Y8`, a 0.4 mm spiral lift on every retraction, and a 2 mm @ 60 mm/s
-retract with wipe against the reference's 1.5 mm @ 30 mm/s without. All now match the
-reference (user decision). Ooze prevention is on, and `M106 T-2 S255` is reproduced at
-layer 1 via `layer_change_gcode`. Per-feature printing speeds already matched. Details:
-`README.md` §Motion behaviour, `TODO.md` §Found by the first-print review. The GUI samples
-below were re-sliced afterwards and confirm all of it from the GUI side.
+(`samples/gui-2.4.2/` vs `reference/`, plus QIDI's Cura definition —
+`qidi/definitions/qidi.def.json`, see
+[`reference/qidi-profiles.md`](reference/qidi-profiles.md)). The base profile travelled
+at **500 mm/s** (`travel_speed` from `0.20mm Standard @Qidi XMax`, with `M203 X500`
+allowing it) where QIDI Print never exceeds 100; it also emitted the `M20x` preamble,
+per-feature `M204 S500`/`M205 X8 Y8`, a 0.4 mm spiral lift on every retraction, and a
+2 mm @ 60 mm/s retract with wipe against the reference's 1.5 mm @ 30 mm/s without. All
+now match the reference (user decision). Ooze prevention is on, and `M106 T-2 S255` is
+reproduced at layer 1 via `layer_change_gcode`. Per-feature printing speeds already
+matched. Details: `README.md` §Motion behaviour, `TODO.md` §Found by the first-print
+review. The GUI samples below were re-sliced afterwards and confirm all of it from the
+GUI side.
 
 ## Confirmed by the 2.4.2 GUI slices (2026-09-07)
 

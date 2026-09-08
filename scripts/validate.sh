@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# Task 6 of ifast-orca-profile-handoff.md: slice the shipped profiles and diff
+# Task 6 (see intent/0001-orcaslicer-profile-for-the-ifast.md): slice the shipped
+# profiles and diff
 # the result against the QIDI Print reference exports.
 #
 #   bash scripts/validate.sh
