@@ -6,8 +6,9 @@ see the "derive, don't invent" rule in [`CLAUDE.md`](CLAUDE.md).
 
 ## Next steps
 
-Handoff tasks, with current state. Tasks 1–5 are done; validation (6) and packaging (7)
-remain.
+Handoff tasks, with current state. **All seven are done.** What remains is not slicer
+work: a first print, and the physical checks listed under **Open questions for the
+human** and **Unverified profile values** below.
 
 - [x] **1. Recon the schema** — machine/process inherits chains, legacy-vs-Klipper
       machine inventory, user config dir, and the base-profile choice are recorded in
@@ -78,10 +79,29 @@ remain.
       hand result exactly — end block byte-identical, start block differing only in the
       two commented-out `T1` lines. **The tool-change block is now executed**, which
       task 3 could not do; see **Found by task 6** below.
-- [ ] **7. Package** — fill in `README.md` provenance, finish install instructions,
-      confirm the AGPL-3.0 / Bambu Studio / PrusaSlicer attribution chain.
+- [x] **7. Package** — done (2026-09-07). `README.md` now documents **every key** in
+      the machine profile, grouped by source (preset metadata / geometry / motion limits
+      / per-extruder arrays / G-code blocks / forced by OrcaSlicer), so nothing in
+      `profiles/` is undocumented; the previously unexplained keys were
+      `manual_filament_change`, `nozzle_type`, `printer_notes`, `printer_variant`, the
+      two `default_*_profile` forward references and the fourteen per-extruder arrays.
+      Install instructions gained prerequisites, a post-install confirmation checklist,
+      log locations, and update/uninstall steps. `LICENSE` (a verbatim copy of
+      OrcaSlicer `v2.4.2`'s own AGPL-3.0 text, same SHA-1) and `NOTICE` (the
+      Slic3r → PrusaSlicer → Bambu Studio → OrcaSlicer → here chain, plus which file
+      derives from which upstream preset) are new. `README.md` also gained a repository
+      layout map. See **Found by task 7** below for what packaging checked.
 
 ## Open questions for the human
+
+- [ ] **Confirm the profile in the 2.4.2 GUI once.** Everything in this repo is verified
+      statically (against `Preset.cpp`'s load rules) and by CLI slicing; **no GUI load
+      has been observed**. The one check that only a human can do: start OrcaSlicer, pick
+      printer `QIDI i-Fast 0.4 nozzle`, process `0.20mm Standard @QIDI i-Fast`, filament
+      `QIDI Generic PLA @QIDI i-Fast`, confirm the plate reads 330 × 250 × 320 and that
+      the log holds no error but the expected `Invalid T command (T1).`. Instructions are
+      in `README.md` §Installation step 3. This is the last item of the handoff's
+      definition of done that is not machine-checkable.
 
 - [ ] **Which head assembly is installed** — standard brass, or the 350 °C high-temp
       variant? Per the handoff we default to the standard brass head, so the profile
@@ -602,6 +622,44 @@ them as fixture artifacts rather than profile defects:
       a bare `M104 T0 S200` about 107 lines ahead of the change, with interpolated
       intermediate setpoints. Same idea, different model — as the existing
       `preheat_time` entry predicted. Only matters once a second material ships.
+
+### Found by task 7 (packaging)
+
+Packaging changed no profile value. It checked four things and added two files.
+
+- [x] **Every key in `profiles/machine/` is now documented in `README.md`.** Auditing the
+      shipped machine profile against the flattened base found no undocumented *value* —
+      but six groups of keys had no provenance line: `manual_filament_change`,
+      `nozzle_type`, `printer_notes`, `printer_variant`, the two `default_*_profile`
+      forward references, and the fourteen per-extruder arrays
+      (`retraction_*`, `z_hop*`, `wipe*`, `max/min_layer_height`, `extruder_colour`).
+      All are base values or already-decided items; they are now in the table.
+- [x] **The per-extruder arrays are base values, extended to length 2, and that is why
+      they are in the file at all.** In the GUI Orca extends them itself:
+      `Preset::normalize` → `set_num_extruders` (`v2.4.2:PrintConfig.cpp:8829`) resizes
+      every per-extruder vector by duplicating `values.front()` (`Config.hpp:661`). The
+      CLI never calls `normalize`, so the explicit length-2 arrays are what make a
+      command-line slice see two extruders configured as the GUI would configure them.
+      No value differs from the base.
+- [x] **`manual_filament_change: "0"` is OrcaSlicer's own default, restated.** Worth
+      keeping explicit because the failure is silent and total: with it enabled Orca
+      skips `change_filament_gcode` at the first tool change and turns every `T` into a
+      comment for the whole print (`GCode.cpp:7959`–`7960`;
+      `GCodeWriter::toolchange_prefix`, `GCodeWriter.cpp:547`–`551`).
+- [x] **The installed copy matches the repo.** All seven files under
+      `~/.var/app/com.orcaslicer.OrcaSlicer/config/OrcaSlicer/user/default/` are
+      byte-identical to `profiles/` (2026-09-07), so the install procedure in
+      `README.md` is the one that was actually exercised.
+- [x] **`scripts/validate.sh` re-run at package time: 0 unexpected in both cases**
+      (single 10 accepted / 10 known; dual 90 accepted / 38 known).
+- [x] **`LICENSE` and `NOTICE` added.** `LICENSE` is a verbatim copy of OrcaSlicer
+      `v2.4.2`'s `LICENSE.txt` — the unmodified GNU AGPL v3 text, 661 lines, SHA-1
+      `78e50e186b04c8fe1defaa098f1c192181b3d837`, identical to the source file. `NOTICE`
+      carries the Slic3r → PrusaSlicer → Bambu Studio → OrcaSlicer → here chain, the
+      per-file derivation (which preset each JSON inherits), the fact that `reference/`
+      is QIDI's own output rather than ours, and a no-affiliation statement. JSON has no
+      comment syntax, so in-file attribution lives in the machine profile's
+      `printer_notes`, which already names the base preset, the licence and the sources.
 
 ### From task 2 (the reference G-code extraction)
 

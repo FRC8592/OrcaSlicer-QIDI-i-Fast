@@ -349,7 +349,18 @@ scripts/                               # validation harness (task 6)
 ifast-orca-profile-handoff.md          # the spec
 README.md                              # provenance: which value came from where
 TODO.md                                # every unverified value
+LICENSE                                # AGPL-3.0, verbatim from OrcaSlicer v2.4.2
+NOTICE                                 # attribution chain + per-file derivation
 ```
+
+**Packaging (task 7, done.)** `README.md` documents *every* key in the machine profile,
+grouped by source, so an audit of `profiles/` against the flattened base turns up nothing
+undocumented; keep it that way when adding a key. Attribution lives in three places that
+must stay consistent: `NOTICE`, `README.md` §Attribution, and the machine profile's own
+`printer_notes` (JSON has no comments). The install instructions in `README.md` are the
+procedure that produced the copy under
+`~/.var/app/com.orcaslicer.OrcaSlicer/config/OrcaSlicer/user/default/`, which is
+byte-identical to `profiles/` — re-verify that after changing a profile.
 
 `.gitignore` excludes `/.idea/`, `*.iml` (JetBrains-opened project), `/out/` for
 validation output, and `/00000.log`, the fixed-name log the OrcaSlicer CLI drops in its

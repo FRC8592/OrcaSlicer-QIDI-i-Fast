@@ -6,9 +6,11 @@
 > apart from two *commented-out* `T1` temperature lines, whose value tracks whatever
 > filament sits in extruder 2. A two-material slice emits the tool-change block as
 > designed. Run `bash scripts/validate.sh` to reproduce — see
-> [Validation](#validation). Nothing has been printed yet. See
-> [`TODO.md`](TODO.md) for every unverified value and
-> [`ifast-orca-profile-handoff.md`](ifast-orca-profile-handoff.md) for the spec.
+> [Validation](#validation). **Nothing has been printed yet.**
+>
+> Installing is a copy of seven JSON files — see [Installation](#installation-linux).
+> [`TODO.md`](TODO.md) lists every unverified value and every open question;
+> [`ifast-orca-profile-handoff.md`](ifast-orca-profile-handoff.md) is the spec.
 
 An OrcaSlicer printer profile (machine + process + minimal filament) for the
 **QIDI i-Fast**, a machine OrcaSlicer does not ship a profile for.
@@ -19,32 +21,94 @@ An OrcaSlicer printer profile (machine + process + minimal filament) for the
 
 ## Installation (Linux)
 
-Profiles are plain JSON dropped into OrcaSlicer's user config directory. **Which
-directory depends on how OrcaSlicer was installed:**
+The seven JSON files under `profiles/` map one-to-one onto OrcaSlicer's user config
+directories. Installing is a copy — there is nothing to build and nothing to edit.
+
+### 1. Prerequisites
+
+- **OrcaSlicer 2.4.2.** Every preset here carries `version: "02.04.00.06"`, the QIDI
+  vendor bundle version that ships with it. Nothing compares that against the
+  application version, so the presets will load on a newer OrcaSlicer — but nothing
+  here has been validated on one.
+- **The QIDI vendor must be installed in OrcaSlicer**, because every preset here
+  `inherits` a QIDI system preset. Run the configuration wizard once and enable
+  **QIDI**. Any QIDI model works: enabling a vendor copies the *whole* `Qidi.json`
+  bundle into `<config>/system/` (`v2.4.2:PresetUpdater.cpp:1068`–`1108`), and the
+  per-model tick only controls which presets are *visible*. **QIDI → X-Max
+  (0.4 nozzle)** is the natural choice, being the preset this profile derives from.
+  Without the vendor the profile is dropped at startup with
+  `can not find parent Qidi X-Max 0.4 nozzle for config …` in the log, and **no visible
+  error in the GUI**.
+
+### 2. Copy the files
+
+Which directory depends on how OrcaSlicer was installed:
 
 | Install | User profile directory |
 |---|---|
 | Flatpak `com.orcaslicer.OrcaSlicer` | `~/.var/app/com.orcaslicer.OrcaSlicer/config/OrcaSlicer/user/default/` |
 | AppImage / native | `~/.config/OrcaSlicer/user/default/` |
 
+With OrcaSlicer closed:
+
 ```bash
 ORCA=~/.var/app/com.orcaslicer.OrcaSlicer/config/OrcaSlicer/user/default   # flatpak
+mkdir -p "$ORCA"/{machine,process,filament}
 cp "profiles/machine/QIDI i-Fast 0.4 nozzle.json" "$ORCA/machine/"
 cp profiles/process/*.json  "$ORCA/process/"
 cp profiles/filament/*.json "$ORCA/filament/"
 ```
 
-**Before the profile will load**, the QIDI vendor must be installed in OrcaSlicer, because
-the profile `inherits` a QIDI system preset. Run OrcaSlicer's configuration wizard once and
-enable **QIDI → X-Max (0.4 nozzle)**. Without it the profile is dropped at startup with
-`can not find parent Qidi X-Max 0.4 nozzle for config …` in the log and no visible error.
+The filename **is** the preset name on this load path — the `name` key is parsed and
+then never read (`v2.4.2:Preset.cpp:1613`–`1615`) — so do not rename the files.
 
-Two operational warnings:
+### 3. Confirm it loaded
 
-- **Copy, never edit in place.** If a preset throws while loading, OrcaSlicer *deletes the
-  file* (`v2.4.2:Preset.cpp:1641`–`1651`). This repo is the source of truth.
-- **A missing or unparseable `version` key is a silent no-op** — the preset is skipped with
-  no log line at all (`Preset.cpp:1653`–`1656`).
+Start OrcaSlicer and select, in order:
+
+1. **Printer → `QIDI i-Fast 0.4 nozzle`.** It appears as a *user* preset among the QIDI
+   printers rather than under a vendor heading of its own: `get_custom_vendor_models`
+   skips any preset whose base is another preset
+   (`v2.4.2:PresetBundle.cpp:2393`–`2400`), and ours derives from
+   `Qidi X-Max 0.4 nozzle`.
+2. **Process → `0.20mm Standard @QIDI i-Fast`** — the one layer height with reference
+   G-code behind it. See [Process profiles](#process-profiles).
+3. **Filament → `QIDI Generic PLA @QIDI i-Fast`.**
+
+Then check the plate reads **330 × 250 × 320 mm**, and slice something small. Exactly
+one line at `error` level is expected — `Invalid T command (T1).`, which is benign and
+explained under [One expected error in the log](#one-expected-error-in-the-log).
+Anything else is not expected.
+
+If a preset does not appear at all, the log is the only place that says why:
+`~/.var/app/com.orcaslicer.OrcaSlicer/config/OrcaSlicer/log/` for the flatpak,
+`~/.config/OrcaSlicer/log/` for an AppImage.
+
+This procedure is the one that produced the copy installed on the development machine;
+all seven installed files are byte-identical to `profiles/` (verified 2026-09-07).
+
+### Two operational warnings
+
+- **Copy, never edit in place.** If a preset throws while loading, OrcaSlicer *deletes
+  the file* (`v2.4.2:Preset.cpp:1641`–`1651`). This repo is the source of truth; the
+  installed copies are disposable.
+- **A missing or unparseable `version` key is a silent no-op** — the preset is skipped
+  with no log line at all (`Preset.cpp:1653`–`1656`). If a hand-edited preset vanishes
+  from the GUI, check `version` first.
+
+### Updating and uninstalling
+
+Updating is the same copy again, with OrcaSlicer closed. Uninstalling is deleting the
+seven files:
+
+```bash
+rm "$ORCA/machine/QIDI i-Fast 0.4 nozzle.json"
+rm "$ORCA"/process/*"@QIDI i-Fast.json"
+rm "$ORCA"/filament/*"@QIDI i-Fast.json"
+```
+
+Saving a modified preset in the GUI writes another file into these directories, so list
+them before assuming they are clean.
 
 ## Provenance
 
@@ -59,41 +123,107 @@ Chosen over `Qidi X-CF Pro 0.4 nozzle` — the two are byte-identical at `v2.4.2
 "0"` (the i-Fast is two independent hotends, not an MMU) plus a legacy-QIDI start block.
 The X-CF Pro ships SEMM `"1"`. Both are 300 × 250 × 300, so neither is closer on volume.
 
-Everything not listed below is inherited from that chain unchanged — in particular **all
-15 `machine_max_*` motion limits are byte-identical to the base** (hard rule 6).
+### Every key in the machine profile
 
-### Values from QIDI's published profiles
+`profiles/machine/QIDI i-Fast 0.4 nozzle.json` in full. **Anything not in this table is
+not in the file** — it is inherited from the chain above unchanged, and that includes
+every speed, acceleration and retraction behaviour not listed here.
 
-All from `reference/qidi-profiles/prusaslicer/PrusaSlicer_fast.ini`, QIDI's own i-Fast
-PrusaSlicer profile:
+Four abbreviations for the source column:
 
-| Profile key | Value | ini source |
+- **base** — `Qidi X-Max 0.4 nozzle` → `fdm_qidi_common` → `fdm_machine_common`, `v2.4.2`
+- **ini** — `reference/qidi-profiles/prusaslicer/PrusaSlicer_fast.ini`, QIDI's own
+  published i-Fast PrusaSlicer profile
+- **G-code** — `reference/single-extruder.gcode` / `reference/dual-extruder.gcode`,
+  extracted verbatim in [`reference/extracted-gcode.md`](reference/extracted-gcode.md)
+- **Orca** — forced by OrcaSlicer's own behaviour, argued in the section named
+
+#### Preset metadata
+
+| Key | Value | Source |
 |---|---|---|
-| `printable_area` | `0x0, 330x0, 330x250, 0x250` | `bed_shape` |
-| `printable_height` | `320` | `max_print_height` |
-| `nozzle_diameter` | `["0.4","0.4"]` | `nozzle_diameter = 0.4,0.4` |
-| `extruder_offset` | `["0x0","0x0"]` | `extruder_offset = 0x0,0x0` |
-| `single_extruder_multi_material` | `"0"` | `single_extruder_multi_material = 0` |
-| `gcode_flavor` | `marlin` | `gcode_flavor = marlin` |
-| `use_relative_e_distances` | `"0"` | `use_relative_e_distances = 0` |
-| `disable_m73` | `"1"` | `remaining_times = 0` (and zero `M73` in either reference) |
+| `type` | `machine` | Orca preset shape (`Preset::save`, `v2.4.2:Preset.cpp:675`–`686`) |
+| `name` | `QIDI i-Fast 0.4 nozzle` | Must equal the filename and not collide with a system preset (`Preset.cpp:1613`–`1621`) |
+| `inherits` | `Qidi X-Max 0.4 nozzle` | base — see [Derived from](#derived-from) |
+| `from` | `User` | Orca preset shape; also **mandatory for the CLI** |
+| `instantiation` | `true` | Orca preset shape; required of anything another preset inherits |
+| `version` | `02.04.00.06` | The QIDI vendor bundle's own version. Mandatory, and must parse as a Semver, or the preset is skipped **silently** |
+| `printer_model` | `QIDI i-Fast` | A new model name, deliberately not a QIDI bundle one: reusing `Qidi X-Max` would make `get_current_vendor_type()` classify the i-Fast as `VendorType::Klipper_Qidi` (`PresetBundle.cpp:612`–`641`) |
+| `printer_variant` | `0.4` | base — the only nozzle QIDI documents for this machine |
+| `default_print_profile` | `0.20mm Standard @QIDI i-Fast` | Our process preset; the one layer height with reference G-code behind it |
+| `default_filament_profile` | `["QIDI Generic PLA @QIDI i-Fast"]` | Our filament preset |
+| `printer_notes` | provenance note | Ours. A short version of this README, visible in the GUI |
 
-The ini also **cross-confirms the base profile's motion limits**: every `machine_max_*`
-matches the base exactly, with one exception — `machine_max_acceleration_e` is `10000,5000`
-in the ini against the base's `5000,5000`. Hard rule 6 says do not raise motion limits, so
-the base value ships. Recorded in `TODO.md`.
+#### Geometry and extruder configuration
 
-### Values from the reference G-code
+| Key | Value | Source |
+|---|---|---|
+| `printable_area` | `0x0, 330x0, 330x250, 0x250` | ini `bed_shape` |
+| `printable_height` | `320` | ini `max_print_height` |
+| `nozzle_diameter` | `["0.4","0.4"]` | ini `nozzle_diameter = 0.4,0.4`. The **array length** is what gives Orca two extruders — see below |
+| `single_extruder_multi_material` | `"0"` | ini; also the base's value. Two independent hotends, not an MMU |
+| `extruder_offset` | `["0x0","0x0"]` | ini `extruder_offset = 0x0,0x0`. The firmware owns the real offsets; a non-zero value here double-applies |
+| `gcode_flavor` | `marlin` | ini `gcode_flavor = marlin` (= base) |
+| `use_relative_e_distances` | `"0"` | ini `use_relative_e_distances = 0`, and `M82` + an absolute `E` on all 1855 extrusion moves of the single reference. **Necessary, not cosmetic:** the option defaults to `true` and the whole base chain leaves it unset |
+| `nozzle_type` | `["brass","brass"]` | The handoff's "assume the standard brass head" — an instruction, not a measurement. The base says `hardened_steel`. Affects only Orca's abrasion warnings. `TODO(verify)` |
 
-`reference/single-extruder.gcode` and `reference/dual-extruder.gcode`, extracted verbatim
-in [`reference/extracted-gcode.md`](reference/extracted-gcode.md):
+`single_extruder_multi_material` and `nozzle_diameter` have to agree: with SEMM off,
+`Preset::normalize` counts *extruders* from the length of the `nozzle_diameter` array
+(`v2.4.2:Preset.cpp:455`–`462`). The flag alone changes nothing, and the array alone is
+ignored.
 
-| Profile key | Source | Fidelity |
+#### Motion limits — carried from the base, unchanged
+
+All 15 `machine_max_*` keys (`machine_max_acceleration_e`, `…_extruding`,
+`…_retracting`, `…_travel`, `…_x/y/z`, `machine_max_speed_e/x/y/z`,
+`machine_max_jerk_e/x/y/z`) are **byte-identical to the base** (hard rule 6: this is not
+a fast machine, do not raise them). `auxiliary_fan` `"0"` is likewise the base's value,
+restated.
+
+The ini independently **cross-confirms** every one of them, with a single exception:
+`machine_max_acceleration_e` is `10000,5000` in the ini against the base's `5000,5000`.
+Hard rule 6 keeps the base value. Recorded in `TODO.md`.
+
+#### Per-extruder arrays, written out at length 2
+
+| Keys | Value |
+|---|---|
+| `max_layer_height`, `min_layer_height` | base values, duplicated |
+| `retraction_minimum_travel`, `retraction_length`, `retract_length_toolchange`, `retraction_speed`, `deretraction_speed`, `retract_before_wipe`, `retract_when_changing_layer`, `retract_restart_extra`, `retract_restart_extra_toolchange` | base values, duplicated |
+| `z_hop`, `z_hop_types`, `wipe`, `wipe_distance`, `extruder_colour` | base values, duplicated |
+
+**No value here differs from the base** — the base simply states each one once, for its
+single extruder, and the i-Fast has two. In the GUI Orca would extend them itself:
+`Preset::normalize` → `set_num_extruders` (`PrintConfig.cpp:8829`) resizes every
+per-extruder vector, duplicating `values.front()` (`Config.hpp:661`). The CLI does not
+call `normalize`, so writing them out is what makes a command-line slice see two
+extruders configured the same way the GUI would. Retraction tuning is out of scope until
+after a first print; `z_hop` `0.4` with `z_hop_types` `Auto Lift` has no counterpart in
+the reference and is recorded in `TODO.md`.
+
+#### G-code blocks — from the reference exports
+
+| Key | Source | Fidelity |
 |---|---|---|
 | `machine_start_gcode` | §2 start block | Expands **byte-for-byte** to both reference files |
 | `machine_end_gcode` | §4 end block, all 15 lines | **Byte-identical** |
 | `change_filament_gcode` | §7 variant C | Structure reproduced; see the accepted diffs in `TODO.md` |
-| `use_relative_e_distances: "0"` | `M82` + absolute `E` on every move | Necessary: the option **defaults to `true`** and the base chain never sets it |
+| `before_layer_change_gcode` | cleared to `""` | The reference has no per-layer `G92 E0` |
+| `time_lapse_gcode` | cleared to `""` | Neither reference contains `;TIMELAPSE_TAKE_FRAME` |
+
+#### Forced by OrcaSlicer's own behaviour
+
+| Key | Value | Why |
+|---|---|---|
+| `disable_m73` | `"1"` | Otherwise Orca injects `M73 P<n> R<n>` progress lines *into* the custom start and end blocks. Zero `M73` in either reference; ini `remaining_times = 0` |
+| `default_bed_type` | `"3"` | The **numeric** `btPEI`, "High Temp Plate" |
+| `support_air_filtration` | `"0"` | Otherwise `M106 P3 S255` lands after the start block and `M106 P3 S0` after `;End of Gcode` |
+| `manual_filament_change` | `"0"` | Orca's own default, restated. With it on, `change_filament_gcode` is skipped at the *first* tool change and every `T` becomes a comment for the whole print (`GCode.cpp:7959`–`7960`, `GCodeWriter.cpp:547`–`551`) — the opposite of what this machine needs |
+
+Each is argued in full under
+[Values forced by OrcaSlicer's own behaviour](#values-forced-by-orcaslicers-own-behaviour).
+
+### Notes on the G-code blocks
 
 The start block is templated in exactly four places, so one string reproduces both the
 single- and dual-extruder exports:
@@ -138,6 +268,9 @@ Five presets, one per layer height OrcaSlicer `v2.4.2` ships for the legacy X-Ma
 | `0.20mm Standard @QIDI i-Fast` | `0.20mm Standard @Qidi XMax` |
 | `0.25mm Draft @QIDI i-Fast` | `0.25mm Draft @Qidi XMax` |
 | `0.30mm Extra Draft @QIDI i-Fast` | `0.30mm Extra Draft @Qidi XMax` |
+
+Metadata is the same shape as the machine profile's — `type` `process`, `name` matching
+the filename, `inherits`, `from` `User`, `instantiation` `true`, `version` `02.04.00.06`.
 
 Each is a thin override that changes **three values**. Everything else — every speed,
 acceleration, line width, shell count and infill setting — is inherited from
@@ -190,6 +323,11 @@ tuning belong after a first successful print, not here.
 | every `*_plate_temp` and `*_plate_temp_initial_layer` | `80` | `M140 S80` / `M190 S80` in both references |
 | `enable_pressure_advance` | `0` | No `M900` in either reference, in `PrusaSlicer_fast.ini`, or in the Simplify3D `.fff` |
 | `compatible_printers` | both printer names | Same two code paths as the process profiles |
+
+Plus the same metadata shape, with one filament-only addition: **`filament_id` `GFL99`**,
+carried unchanged from the parent `Qidi Generic PLA`. It is the vendor's own id for
+generic PLA, and the CLI reads it straight out of the preset (`v2.4.2:OrcaSlicer.cpp:1993`–`1995`),
+so it must survive flattening.
 
 Everything else is inherited, including `filament_diameter` `1.75` (which matches
 `filament_diameter = 1.75,1.75` in the ini) and `filament_type` `PLA`.
@@ -281,6 +419,12 @@ This only affects command-line slicing. **Nothing about normal GUI use requires 
 - **`support_air_filtration: "0"`** — otherwise `M106 P3 S255` is injected after the start
   block and `M106 P3 S0` after `;End of Gcode`. See
   [the section above](#support_air_filtration-0--a-machine-key-the-filament-profile-forced-out).
+- **`manual_filament_change: "0"`** — OrcaSlicer's own default (`ConfigOptionBool(false)`,
+  `v2.4.2:PrintConfig.cpp:5964`–`5970`), restated because getting it wrong is silent and
+  total: with it enabled Orca skips `change_filament_gcode` at the first tool change *and*
+  turns every `T` into a comment for the entire print (`GCode.cpp:7959`–`7960`;
+  `GCodeWriter::toolchange_prefix`, `GCodeWriter.cpp:547`–`551`). The i-Fast is a real
+  multi-tool machine, not an M600-and-swap-by-hand one, so it must stay off.
 
 ### One expected error in the log
 
@@ -403,11 +547,59 @@ Print blocks only when switching to T0 — are all in `TODO.md`.
 Explicitly out of scope until after a first successful print: tuned retraction, flow
 calibration, pressure advance, per-material profiles, chamber-temperature workflows.
 
+Also out of scope, with reasons in `TODO.md`: nozzle sizes other than 0.4 (QIDI
+publishes nothing for them, and OrcaSlicer ships no legacy-QIDI process profiles to
+derive them from), a material library beyond the one PLA, network printing, and
+ooze prevention / idle-nozzle temperature, which only bites once a second material
+exists.
+
+## Repository layout
+
+```
+profiles/machine/    QIDI i-Fast 0.4 nozzle.json        -> <config>/user/default/machine/
+profiles/process/    5 x <layer height> @QIDI i-Fast    -> <config>/user/default/process/
+profiles/filament/   QIDI Generic PLA @QIDI i-Fast      -> <config>/user/default/filament/
+
+reference/           read-only inputs, never edited
+  single-extruder.gcode, dual-extruder.gcode            QIDI Print exports: ground truth
+  extracted-gcode.md                                    the verbatim extraction, with commentary
+  qidi-profiles/                                        QIDI's published legacy bundle
+
+scripts/             the validation harness -> out/validate/report.md
+  validate.sh  flatten.py  make_models.py  gcode_diff.py  accepted.py
+
+README.md            this file: provenance, install, validation
+TODO.md              every unverified value, every open question, every decision
+CLAUDE.md            environment and recon notes for anyone picking the work up
+ifast-orca-profile-handoff.md   the original spec
+LICENSE  NOTICE      AGPL-3.0 and the attribution chain
+```
+
+`out/` is validation output, regenerated on every run and gitignored.
+
 ## Attribution and license
 
-The profiles here derive from OrcaSlicer's stock QIDI vendor profiles, which are
-licensed **AGPL-3.0** and themselves derive from **Bambu Studio** and **PrusaSlicer**
-upstream. That attribution chain is preserved: this repo is AGPL-3.0.
+**This repository is AGPL-3.0.** Full text in [`LICENSE`](LICENSE); the attribution
+chain, and which file derives from which upstream preset, in [`NOTICE`](NOTICE).
+
+The short version. The JSONs under `profiles/` are derived works of OrcaSlicer's stock
+QIDI vendor profiles, so they inherit OrcaSlicer's licence:
+
+```
+Slic3r  ->  PrusaSlicer  ->  Bambu Studio  ->  OrcaSlicer (AGPL-3.0)  ->  this repo
+```
+
+Every project in that chain carried its predecessors' work forward under the same
+licence and credited them; this one does the same. `LICENSE` is a verbatim copy of
+OrcaSlicer `v2.4.2`'s own `LICENSE.txt` (the unmodified GNU AGPL v3 text — same SHA-1).
+
+Everything under `reference/` is **not** ours and is not covered by that: it is QIDI
+Technology's own published output — their legacy profile bundle and G-code exported by
+QIDI Print — reproduced byte-for-byte as read-only input. `.gitattributes` enforces the
+byte-exactness.
+
+This is a community profile, not affiliated with or endorsed by QIDI Technology or the
+OrcaSlicer project.
 
 ## First print
 
