@@ -1,12 +1,18 @@
 # GUI slices, OrcaSlicer 2.4.2
 
 Two G-code files sliced **by hand, in the OrcaSlicer 2.4.2 GUI**, on 2026-09-07, from the
-same 20 mm box STL the QIDI Print references were made from.
+same 20 mm box STL the QIDI Print references were made from, with the profile as it
+stands after the first-print review of the same day.
 
 | File | Job |
 |---|---|
-| `20mm_Box_PLA_15m6s.gcode` | one extruder, our PLA |
-| `20mm_Box_PLA_19m27s_multiple.gcode` | two extruders, our PLA in **both** slots, extruders assigned per surface |
+| `20mm_Box_PLA_12m3s.gcode` | one extruder, our PLA |
+| `20mm_Box_PLA_15m3s_multi.gcode` | two extruders, our PLA in **both** slots, extruders assigned per surface |
+
+(They replace a pair sliced earlier that day, before the review, at 15m6s and 19m27s:
+the print-time drop is the loss of the 500 mm/s travel's *estimate* only — real travel
+is now slower, but the spiral lift on every retraction and the tool-change waits are
+gone.)
 
 They are kept because **the validation harness cannot produce them.** `scripts/validate.sh`
 drives the CLI, and the CLI differs from the GUI in ways that matter (see below); the
@@ -15,17 +21,26 @@ target version actually emits for a human using the profile the intended way.
 
 They are *our output*, not ground truth. `reference/` remains the authority.
 
-> **These two files predate the first-print review of 2026-09-07.** They were sliced
-> with the base's motion: travel at `F30000` (500 mm/s), a 0.4 mm spiral lift on every
-> retraction, a 2 mm @ 60 mm/s retract with wipe, and the `M201`/`M203`/`M204`/`M205`
-> preamble plus `M204 S500` / `M205 X8 Y8` in the body. Everything they prove below
-> still holds. They should be **re-sliced with the current profile** before the first
-> print; the replacements must show, in `; CONFIG_BLOCK`, `travel_speed = 100`,
-> `ooze_prevention = 1`, `idle_temperature = 150,150`,
-> `emit_machine_limits_to_gcode = 0`, and in the body: no `F30000`, no `M20x`, one Z
-> change per layer, retracts of 1.5 mm at `F1800`, `M106 T-2 S255` exactly once before
-> the second layer, and (dual) `M104 S150 T<n> ;cooldown` at tool changes with 0 mm
-> retract debt on the incoming tool — which `scripts/gcode_diff.py` now measures.
+## What the review's changes look like from the GUI
+
+Checked on both files (2026-09-07, after the review):
+
+- `; CONFIG_BLOCK` reads `travel_speed = 100`, `travel_speed_z = 5`,
+  `default_acceleration = 0`, `default_jerk = 0`, `ooze_prevention = 1`,
+  `idle_temperature = 150,150`, `emit_machine_limits_to_gcode = 0`,
+  `retraction_length = 1.5,1.5`, `retraction_speed = 30,30`, `wipe = 0,0`, `z_hop = 0,0`
+  and the `layer_change_gcode` — every one arriving through `inherits`.
+- Body: zero `F30000`, zero `M201`–`M205`, zero `G2`/`G3`/`G17`; travel tops out at
+  `F6000`; every retract is 1.5 mm at `F1800` and every prime matches; one Z change per
+  layer (hop detector 1.0). `M106 T-2 S255` exactly once, right after OrcaSlicer's
+  `M106 S127` for layer 1.
+- Dual: 51 body tool changes, 26 to T0 and 25 to T1, every one `T<n>` / `G92 E0` /
+  `M109 S200` followed by ooze prevention's own `M109 S200 T<n>`; four
+  `M104 S150 T1 ;cooldown` parks and eight `; preheat` lines — the rest of the cooldowns
+  were dropped because the tool came back within 30 s (this job alternates every layer,
+  so T0 was never parked at all). Incoming-tool retract debt **0 mm at all 51 changes**.
+- Unchanged from before: end block byte-identical, start block identical apart from the
+  `T1` conditional behaving both ways, the bare `T0` in the single file.
 
 ## What they prove
 
@@ -68,15 +83,17 @@ Both files embed their own resolved config (`; CONFIG_BLOCK_START`), and it read
 
 ```bash
 python3 scripts/gcode_diff.py reference/single-extruder.gcode \
-    "samples/gui-2.4.2/20mm_Box_PLA_15m6s.gcode" --context single
+    "samples/gui-2.4.2/20mm_Box_PLA_12m3s.gcode" --context single
 
 python3 scripts/gcode_diff.py reference/dual-extruder.gcode \
-    "samples/gui-2.4.2/20mm_Box_PLA_19m27s_multiple.gcode" --context dual --toolchange
+    "samples/gui-2.4.2/20mm_Box_PLA_15m3s_multi.gcode" --context dual --toolchange
 ```
 
 Both report differences the harness's own runs do not, and the differences are real, not
-noise — they are listed in `TODO.md` under "Found by the 2.4.2 GUI slices". Two of them
-matter:
+noise — they are listed in `TODO.md` under "Found by the 2.4.2 GUI slices". They are the
+only UNEXPECTED items either file produces (one in the single, two in the dual), and
+they stay unexpected deliberately: the registry is scoped to what the CLI can emit, so
+a rule for them would also excuse a CLI regression. Two of them matter:
 
 1. The single-extruder file emits **one bare `T0`** after the preamble that neither the
    reference nor the CLI slice has.

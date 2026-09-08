@@ -651,10 +651,12 @@ them, and they settle what CLI evidence could not:
   T0 is already the active tool, so it should be inert, but tool changes drive the
   i-Fast's firmware auto-lift; `TODO.md` says what to watch on the first print.
 
-These two files predate the first-print review and still show the base's 500 mm/s
-travel, spiral lift and `M20x` codes; they remain valid evidence for everything listed
-above. Re-slicing them with the current profile is on the checklist under
-[First print](#first-print).
+Both files were re-sliced after the first-print review and show its result from the
+GUI side: `travel_speed = 100`, `ooze_prevention = 1`, `idle_temperature = 150,150` and
+`emit_machine_limits_to_gcode = 0` in the config block; no `F30000`, no `M20x`, one Z
+change per layer, 1.5 mm retracts at `F1800` and `M106 T-2 S255` once at layer 1 in the
+body; and, in the dual file, ooze prevention's cooldown/preheat lines with 0 mm retract
+debt on the incoming tool at all 51 changes. The sample README has the full list.
 
 ### The dual-extruder case is sliced with OrcaSlicer 2.3.1, not 2.4.2
 
@@ -773,14 +775,9 @@ OrcaSlicer project.
 Single extruder, PLA, small model, supervised, chamber heater off, `0.20mm Standard`.
 Get that clean before trusting anything else in here.
 
-**Before it:** re-slice the reference's 20 mm box in the 2.4.2 GUI, single- and
-dual-extruder, and replace the files in `samples/gui-2.4.2/`. The existing pair predates
-the first-print review; the new ones must show no `F30000`, no `M20x`, no Z change
-inside a layer, retracts of 1.5 mm at `F1800`, `M106 T-2 S255` once before the second
-layer, and — dual — `M104 S150 T<n> ;cooldown` lines and a `; CONFIG_BLOCK` that reads
-`travel_speed = 100`, `ooze_prevention = 1`, `idle_temperature = 150,150`,
-`emit_machine_limits_to_gcode = 0`. `scripts/gcode_diff.py` runs on them directly (see
-the sample README).
+**Already done:** the 2.4.2 GUI slices in `samples/gui-2.4.2/` were re-made with this
+profile and show every change of the review from the GUI side (see
+[Confirmed in the 2.4.2 GUI](#confirmed-in-the-242-gui)).
 
 **During it**, in order, each with a `TODO.md` entry behind it:
 

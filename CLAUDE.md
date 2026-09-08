@@ -492,7 +492,7 @@ retract with wipe against the reference's 1.5 mm @ 30 mm/s without. All now matc
 reference (user decision). Ooze prevention is on, and `M106 T-2 S255` is reproduced at
 layer 1 via `layer_change_gcode`. Per-feature printing speeds already matched. Details:
 `README.md` §Motion behaviour, `TODO.md` §Found by the first-print review. The GUI samples
-below predate this and need re-slicing.
+below were re-sliced afterwards and confirm all of it from the GUI side.
 
 ## Confirmed by the 2.4.2 GUI slices (2026-09-07)
 
