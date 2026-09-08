@@ -169,6 +169,21 @@ and `bed_temperature_initial_layer_single` (`:3034`). The parser supports
 **`use_relative_e_distances` defaults to `true`** and the whole base chain leaves it
 unset — so the explicit `"0"` in our profile is a necessary fix, not documentation.
 
+**`emit_machine_limits_to_gcode`** (bool, `PrintConfig.cpp:4446`, default `true`,
+in `Preset::printer_options()` at `Preset.cpp:1384`) is OrcaSlicer's switch for the
+`M201`/`M203`/`M204`/`M205` preamble (`GCode::print_machine_envelope`,
+`GCode.cpp:3939`). It is **not** PrusaSlicer's `machine_limits_usage`, which Orca does not
+have — earlier notes used the wrong name. We set it to `"0"`; the body's `M204 S` /
+`M205 X Y` come separately from the process profile's `default_acceleration` /
+`default_jerk`, and every emission site is gated on those being `> 0`
+(`GCode.cpp:4764`, `:6415`, `:7383`; `:4768`, `:6442`, `:7398`), so `0` silences them.
+
+**The bare `T0` in GUI single-extruder slices** comes from `GCodeWriter::toolchange`
+(`GCodeWriter.cpp:576`): it writes `T<n>` when `multiple_extruders` is true *or*
+`filament_diameter` has more than one entry. The GUI always has two filament slots on a
+two-extruder printer; the CLI single case loads one filament. Unavoidable in the GUI,
+unreproducible from the CLI.
+
 **Nozzle sizes.** Ship **0.4 only.** It is the sole nozzle QIDI documents for the
 i-Fast (`PrusaSlicer_fast.ini`: `nozzle_diameter = 0.4,0.4`), and process values for
 other sizes have no source — inventing them breaks rule 1. Adding sizes later is cheap:
@@ -335,8 +350,17 @@ the firmware auto-lift — that is separate and stays untouched — it is the te
 half of the same idea. Conveniently it is only supported with SEMM **off**
 (`Print.cpp:1522`), which is what we are already doing.
 
-Deferred, though: the handoff scopes the first profile to one PLA filament, where an
-idle extruder never happens. Enable and tune it when the second material lands.
+**Enabled since 2026-09-07** (user decision, first-print review): `ooze_prevention: "1"`
+on every process profile, `idle_temperature: ["150"]` on the PLA filament. Mechanics at
+`v2.4.2`: `OozePrevention::pre_toolchange` (`GCode.cpp:267`) emits a non-blocking
+`M104 S<idle> T<old> ;cooldown` before the change; `post_toolchange` (`:293`) emits an
+`M109` for the new tool after it (on top of ours); the `GCodeProcessor` post-pass
+backtraces a `; preheat T<n>` `M104` by `preheat_time` (30 s default) and removes a
+cooldown whose tool returns within that window (`; removed M104`). It only sets
+temperatures — no park position, so nothing to collide with the firmware lift — and it
+leaves the start block alone because the block already contains `M104`/`M109`
+(`custom_gcode_sets_temperature`, `GCode.cpp:4063`). A filament without
+`idle_temperature` falls back to the process's `standby_temperature_delta` (`-5`).
 
 Other `.ini` files here (`_max`, `_plus`, `_pro`, `_cf_pro`, `_maker`, `_mates`) are
 sibling machines — useful for cross-checking, not for sourcing i-Fast values.
@@ -368,7 +392,7 @@ scripts/                               # validation harness (task 6)
   validate.sh                          #   entry point: flatten, slice, diff, report
   flatten.py                           #   resolves `inherits`, which the CLI does not
   make_models.py                       #   binary-STL test cubes
-  gcode_diff.py                        #   the five comparisons
+  gcode_diff.py                        #   the seven comparisons
   accepted.py                          #   registry of known differences, with reasons
 ifast-orca-profile-handoff.md          # the spec
 README.md                              # provenance: which value came from where
@@ -409,11 +433,15 @@ working directory. `.gitattributes` protects the byte-exactness of `reference/**
 
 ## Validation (task 6, done)
 
-`bash scripts/validate.sh` → `out/validate/report.md`. Five checks (start block, end
-block, temperature commands, code census, tool-change sequence), each difference
-classified ACCEPTED / KNOWN / UNEXPECTED by `scripts/accepted.py`; only UNEXPECTED
-fails the run, and nothing is ever hidden (hard rule 7). Deterministic across runs, and
-verified to catch a regression. Full description in `README.md` §Validation.
+`bash scripts/validate.sh` → `out/validate/report.md`. Seven checks (start block, end
+block, temperature commands, code census, motion envelope, tool-change sequence,
+tool-change priming), each difference classified ACCEPTED / KNOWN / UNEXPECTED by
+`scripts/accepted.py`; only UNEXPECTED fails the run, and nothing is ever hidden (hard
+rule 7). Temperature lines compare in canonical form (comment stripped, `T` before `S`).
+Deterministic across runs, and verified to catch a regression. Full description in
+`README.md` §Validation. The registry deliberately has **no** entry for the machine-limit
+preamble, per-feature `M204`/`M205`, the spiral lift, a travel feedrate above the
+reference's or a non-zero retract debt at a tool change — those must stay absent.
 
 The invocations, established empirically — **the flag names below are the ones that
 work; `--load_settings` with an underscore is rejected** (`Config.cpp:238` registers
@@ -452,6 +480,20 @@ Block boundaries used by the harness are unique in all three files: the start bl
 `;T0` … `M141 S0` inclusive, the end block `M107 T-2` … `;End of Gcode`, and
 OrcaSlicer's `; CONFIG_BLOCK_START` trailer is truncated before any comparison.
 
+## First-print review (2026-09-07)
+
+After task 7 the print *body* was compared against the reference for the first time
+(`samples/gui-2.4.2/` vs `reference/`, plus QIDI's Cura definition in
+`reference/qidi-profiles/CURA/qidi.zip`). The base profile travelled at **500 mm/s**
+(`travel_speed` from `0.20mm Standard @Qidi XMax`, with `M203 X500` allowing it) where
+QIDI Print never exceeds 100; it also emitted the `M20x` preamble, per-feature
+`M204 S500`/`M205 X8 Y8`, a 0.4 mm spiral lift on every retraction, and a 2 mm @ 60 mm/s
+retract with wipe against the reference's 1.5 mm @ 30 mm/s without. All now match the
+reference (user decision). Ooze prevention is on, and `M106 T-2 S255` is reproduced at
+layer 1 via `layer_change_gcode`. Per-feature printing speeds already matched. Details:
+`README.md` §Motion behaviour, `TODO.md` §Found by the first-print review. The GUI samples
+below predate this and need re-slicing.
+
 ## Confirmed by the 2.4.2 GUI slices (2026-09-07)
 
 The user sliced the reference's own 20 mm box by hand in the OrcaSlicer 2.4.2 **GUI**,
@@ -488,3 +530,5 @@ behaviour in the repo — the harness drives the CLI, and the two paths differ.
 
 Explicitly **out of scope** until after a first successful print: tuned retraction, flow
 calibration, pressure advance, per-material profiles, chamber-temperature workflows.
+(Retraction and Z-hop are *set to the reference's values*, which is derivation, not
+tuning.)

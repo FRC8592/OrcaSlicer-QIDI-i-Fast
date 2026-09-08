@@ -6,9 +6,11 @@ see the "derive, don't invent" rule in [`CLAUDE.md`](CLAUDE.md).
 
 ## Next steps
 
-Handoff tasks, with current state. **All seven are done.** What remains is not slicer
-work: a first print, and the physical checks listed under **Open questions for the
-human** and **Unverified profile values** below.
+Handoff tasks, with current state. **All seven are done**, and a **first-print review**
+(2026-09-07) has since brought the print body's motion, the idle-nozzle temperature and
+one fan command into line with the reference — see **Found by the first-print review**
+below. What remains is not slicer work: a first print, and the physical checks listed
+under **Open questions for the human** and **Unverified profile values** below.
 
 - [x] **1. Recon the schema** — machine/process inherits chains, legacy-vs-Klipper
       machine inventory, user config dir, and the base-profile choice are recorded in
@@ -69,8 +71,9 @@ human** and **Unverified profile values** below.
       **Found by task 5** below.
 - [x] **6. Validate** — `scripts/validate.sh` flattens the presets, generates the test
       models, slices both cases and diffs the output against the references, writing
-      `out/validate/report.md`. Five checks (start block, end block, temperature
-      commands, code census, tool-change sequence); every difference is reported and
+      `out/validate/report.md`. Five checks at the time (start block, end block,
+      temperature commands, code census, tool-change sequence; the first-print review
+      added motion envelope and tool-change priming); every difference is reported and
       classified ACCEPTED / KNOWN / UNEXPECTED against `scripts/accepted.py`, and only
       an UNEXPECTED one fails the run. Verified deterministic across runs, and verified
       to *catch* a regression (flipping `disable_m73` to `0` surfaces `M73` as
@@ -103,6 +106,11 @@ human** and **Unverified profile values** below.
       Residual, minor: nobody has read the GUI's *log* for warnings. The G-code proves
       the presets resolved; it does not prove the log is clean.
 
+- [ ] **Before the first print: re-slice `samples/gui-2.4.2/` with the current profile.**
+      The two files there predate the first-print review and show the base's 500 mm/s
+      travel, spiral lift and `M20x` preamble. What the new ones must show is listed in
+      `README.md` §First print and `samples/gui-2.4.2/README.md`.
+
 - [ ] **First print: watch for a lift/park cycle before the first layer.** The
       single-extruder GUI slice emits a bare `T0` between the start block's prime line
       and the first layer — after OrcaSlicer's `G90`/`G21`/`M82` preamble — which neither
@@ -113,6 +121,12 @@ human** and **Unverified profile values** below.
       `X0 Y4 Z0.3` and starting layer 1? If it does, say so — it is fixable, but not by
       editing the start block: OrcaSlicer emits the line itself, afterwards. Mechanism
       and code references under **Found by the 2.4.2 GUI slices**.
+
+- [ ] **First print: which fan comes on as layer 1 starts?** The profile now reproduces
+      the reference's `M106 T-2 S255` there (see **Decided**), without knowing what `T-2`
+      addresses. Chamber circulation, exhaust, or a side blower — note which. If it is a
+      part-cooling fan, the command matters for PLA overhangs; if it is the chamber
+      circulation fan, it matters for the enclosure. Either way it is what QIDI Print does.
 
 - [ ] **Which head assembly is installed** — standard brass, or the 350 °C high-temp
       variant? Per the handoff we default to the standard brass head, so the profile
@@ -261,6 +275,48 @@ human** and **Unverified profile values** below.
       already ruled QIDI Print's per-extruder, per-layer Cura fan curve out of scope for a
       single-PLA profile. Recorded as an accepted diff below rather than reverse-engineered.
 
+- [x] **Match QIDI Print's motion for the first print** (2026-09-07, user). The base
+      OrcaSlicer profile asked the machine for things the reference never does; each is
+      now set to what the reference G-code shows, with QIDI's Cura definition
+      (`reference/qidi-profiles/CURA/qidi.zip:qidi/definitions/qidi.def.json`) as the
+      corroborating source, and none of it is a *tuned* value:
+      - `travel_speed` **100** (was 500 from `0.20mm Standard @Qidi XMax`; reference
+        `F6000`, Cura `speed_travel 100`, ini 130 — see the `TODO(verify)` below);
+      - `retraction_length` **1.5**, `retraction_speed` **30**, `wipe` **0** (reference:
+        50 retractions of exactly 1.5 mm at `F1800`, none during a move; ini `wipe = 0`);
+      - `z_hop` **0** (reference: Z constant within a layer; ini `retract_lift = 0`);
+      - `travel_speed_z` **5** (reference: every Z-carrying move at `F300`; Cura
+        `speed_z_hop 5`);
+      - `emit_machine_limits_to_gcode` **0** and `default_acceleration` /
+        `default_jerk` **0** (reference: no `M201`/`M203`/`M204`/`M205` at all).
+      Per-feature *printing* speeds were already the reference's and are untouched.
+      The harness's new motion-envelope check keeps all of this equal to the reference,
+      and its registry deliberately has no entry for any of it.
+- [x] **Ooze prevention enabled now, not deferred** (2026-09-07, user). `ooze_prevention`
+      `1` on all five process profiles, `idle_temperature` `150` on the PLA filament,
+      from the reference's `M104 T0 S150` (27×). `preheat_time` stays at Orca's default
+      30 s: at QIDI's stated 1.6 °C/s heat-up (Cura `machine_nozzle_heat_up_speed`)
+      150 → 200 takes ~31 s. What it does to a multi-material job is written up in
+      `README.md` §Filament profile; the short version is that the parking temperature
+      is per filament, nothing moves, the start block is untouched, and OrcaSlicer's
+      post-processor drops cooldowns for short idles (`; removed M104`) much as Cura
+      parked only T0. Executed in the 2.3.1 harness dual case; **not yet seen from the
+      2.4.2 GUI** — see the re-slice item under **Open questions**.
+- [x] **`M106 T-2 S255` reproduced at layer 1** (2026-09-07, user), via
+      `layer_change_gcode` = `{if layer_num == 1}M106 T-2 S255\n{endif}`. Both references
+      emit it once at the layer 0 → 1 boundary and both end blocks already emitted
+      `M107 T-2` — the profile was switching off a fan it never switched on. Its target
+      is still unidentified (see the task-2 entry and the first-print question above);
+      reproducing it needs no guess about the machine, only fidelity to the G-code.
+      `layer_num` is `m_layer_index` after `change_layer` increments it
+      (`v2.4.2:GCode.cpp:4663`, `:4680`), so `1` is the second layer; verified by slice —
+      exactly one occurrence, right after OrcaSlicer's own `M106 S127` for that layer.
+- [x] **The machine-limit key is `emit_machine_limits_to_gcode`, not
+      `machine_limits_usage`.** Earlier entries here and in `README.md` named
+      PrusaSlicer's key. OrcaSlicer's is a bool at `v2.4.2:PrintConfig.cpp:4446`, read
+      at `GCode.cpp:3939`–`3943` (`print_machine_envelope`), and it is in
+      `Preset::printer_options()` (`Preset.cpp:1384`), so a user preset can set it.
+
 ## Nozzle sizes — what adding more would take
 
 Machine-side is trivial: a per-nozzle profile is a ~15-key file that `inherits` the 0.4
@@ -277,11 +333,13 @@ Revisit once 0.4 has produced a good print.
 
 ## Deferred until a second material exists
 
-- [ ] **Ooze prevention / idle nozzle temperature.** The dual reference drops the parked
-      hotend to 150 °C and ramps it back (`M104 T0 S150` → `S168.3` → `S200`). Orca's
-      equivalent is `ooze_prevention` + filament `idle_temperature` (or
-      `standby_temperature_delta`), with `preheat_time` for the ramp. Irrelevant to a
-      single-PLA profile, needed to match the reference on a two-material job.
+- [x] **Ooze prevention / idle nozzle temperature — done, see Decided.** The dual
+      reference drops the parked hotend to 150 °C and ramps it back (`M104 T0 S150` →
+      `S168.3` → `S200`); `ooze_prevention` + `idle_temperature` now reproduce the drop.
+      A second material's profile must carry its own `idle_temperature`; the reference
+      never parked its PETG at all (Cura judged T1's idles too short), so 0 (= the
+      process's `-5` delta) is the honest derived value for PETG until a print says
+      otherwise.
 - [ ] **`bed_temperature_formula`.** Defaults to `by_highest_temp`. Harmless while every
       i-Fast filament profile says 80 °C; revisit if one ever doesn't.
 
@@ -420,12 +478,11 @@ Introduced by task 5:
       widths of `0.12mm Fine`, `0.16mm Optimal`, `0.25mm Draft` and
       `0.30mm Extra Draft` come from OrcaSlicer's stock legacy-QIDI profiles and are
       unproven on this machine. `0.20mm Standard` is the one to print first.
-- [ ] **`TODO(verify):` `z_hop` 0.4 with `z_hop_types` `Auto Lift` has no counterpart in
-      the reference.** Carried from the base machine profile. Orca's spiral lift emits
-      interpolated Z values (`Z0.357143`, `Z0.414286`, …) between layers; QIDI Print
-      emits none — Z is constant across a layer in both references. Not changed here:
-      hard rule 6 carries base motion behaviour forward, and tuned retraction is out of
-      scope until after a first print. The task-6 harness will see these as diffs.
+- [x] **Resolved (2026-09-07): `z_hop` is 0.** It was 0.4 with `Auto Lift`, carried
+      from the base; Orca's spiral lift emitted interpolated Z values (`Z0.357143`, …) on
+      every retraction, at travel speed, where QIDI Print's Z is constant across a layer.
+      See **Decided: match QIDI Print's motion**. The harness's hop detector now fails
+      the run if it comes back.
 
 ### Found by task 4 — three defects in the task-3 machine profile
 
@@ -512,22 +569,18 @@ it. All three are fixed in `profiles/machine/QIDI i-Fast 0.4 nozzle.json`.
       true of a filament-less CLI slice only. It is true again now, with the filament
       preset loaded and this key set (re-verified 2026-09-07).
 
-### Found by task 5 — `M201`/`M203`/`M204`/`M205`, not yet decided
+### Found by task 5 — `M201`/`M203`/`M204`/`M205`, decided 2026-09-07
 
-- [ ] **`TODO(verify):` OrcaSlicer emits four machine-limit M-codes the reference has not.**
-      Immediately before the start block every slice writes
-      `M201 X9000 Y9000 Z500 E5000`, `M203 X500 Y500 Z12 E120`, `M204 P1500 R1500 T1500`
-      and `M205 X10.00 Y10.00 Z0.20 E2.50`. The *values* are fine — they are the base
-      profile's `machine_max_*`, which match `PrusaSlicer_fast.ini` exactly (see the
-      `machine_max_acceleration_e` entry above for the one exception). What is undecided
-      is whether they should be **emitted at all**: QIDI Print writes none of them, so the
-      i-Fast prints today with whatever the firmware has stored. `machine_limits_usage`
-      is absent from our profile and from the whole QIDI chain, so Orca's default
-      ("emit to G-code") applies; setting it to time-estimate-only would suppress them.
-      Left alone deliberately — this is a machine-profile question with a real argument
-      either way, and the lines are standard Marlin, not QIDI-specific. **Ask the user
-      before changing it** (rule 8: the machine is in front of them). Task 6 must report
-      these four lines as a diff.
+- [x] **Resolved: not emitted.** Every slice used to write `M201 X9000 Y9000 Z500 E5000`,
+      `M203 X500 Y500 Z12 E120`, `M204 P1500 R1500 T1500` and
+      `M205 X10.00 Y10.00 Z0.20 E2.50` before the start block, plus `M204 S500` and
+      `M205 X8 Y8` from the process profile in the body. The values were the ini's, but
+      QIDI Print writes none of them and the i-Fast prints on its stored limits.
+      `emit_machine_limits_to_gcode: "0"` (the key an earlier version of this entry
+      misnamed `machine_limits_usage`) removes the preamble; `default_acceleration` and
+      `default_jerk` `0` remove the body commands. The `machine_max_*` values stay for
+      the time estimate. User's decision, under **Decided**. The registry has no entry
+      for any of these codes, so their return fails the harness.
 
 ### Found by task 5 — two more CLI flattener requirements
 
@@ -598,8 +651,8 @@ regenerated by re-running the script; `out/` is gitignored.
 These are classified KNOWN: documented here, printed in full in the report, and not
 failing the run. They should shrink over time.
 
-- [ ] **`TODO(verify):` `G92 E0` 333 times against the reference's 7.** OrcaSlicer resets
-      the extruder datum after every retraction and wipe; QIDI Print's absolute `E`
+- [ ] **`TODO(verify):` `G92 E0` after every retraction against the reference's 7.** OrcaSlicer resets
+      the extruder datum after every retraction; QIDI Print's absolute `E`
       climbs monotonically for the whole print and only resets in the start and end
       blocks. Under `M82` the two are functionally equivalent — each `G92 E0` just
       re-bases the following absolute values — and this is standard PrusaSlicer/Orca
@@ -613,13 +666,11 @@ failing the run. They should shrink over time.
 - [ ] **`TODO(verify):` the reference re-asserts `M104 S200` once mid-print; we do not.**
       Same value the start block already set, emitted between two extrusion moves. No
       behavioural difference is expected. Unexplained.
-- [ ] **`TODO(verify):` the spiral Z lift shows up as `G17` + `G3` on 2.3.1.** 99 of each
-      in the dual output, from `z_hop_types` `Auto Lift` carried out of the base machine
-      profile. `enable_arc_fitting` is `0`, so these are the lift itself, not arc-fitted
-      toolpaths — and note 2.4.2 emits the same lift as `G1` segments instead. QIDI Print
-      emits neither. This is the same open question as the existing `z_hop` entry above,
-      now with the exact G-codes attached: **confirm the Chitu firmware accepts `G2`/`G3`
-      before running a dual job sliced on 2.3.1.**
+- [x] **Resolved (2026-09-07): the spiral Z lift is gone with `z_hop` 0.** It showed
+      up as `G17` + `G3` on 2.3.1 and as `G1` segments on 2.4.2. Zero `G2`/`G3`/`G17` in
+      either harness output now, and the registry has no entry for them, so their
+      return fails the run. The question whether the Chitu firmware accepts arcs is
+      moot for this profile.
 
 #### Corroborated by task 6
 
@@ -663,11 +714,15 @@ them as fixture artifacts rather than profile defects:
       cannot be both, and task 3 chose the safe one deliberately — but it costs a
       temperature wait on every change, which will slow a dual print. Revisit if the
       first dual print is unacceptably slow.
-- [ ] **`TODO(verify):` OrcaSlicer's lookahead preheat is annotated and differently
-      scheduled.** Ours: `M104 S200 T0 ; preheat T0 time: 30s`, 49×. The reference:
-      a bare `M104 T0 S200` about 107 lines ahead of the change, with interpolated
-      intermediate setpoints. Same idea, different model — as the existing
-      `preheat_time` entry predicted. Only matters once a second material ships.
+- [ ] **`TODO(verify):` OrcaSlicer's preheat/cooldown schedule differs from Cura's.**
+      Ours, with ooze prevention on: `M104 S<idle> T<old> ;cooldown` before the `T`
+      when the tool will idle longer than `preheat_time`, else `; removed M104`;
+      `M104 S<t> T<n> ; preheat T<n> time: 30s` backtraced 30 s ahead; and Orca's own
+      `M109 S<t> T<n>` wait after the change on top of ours. The reference: a bare
+      `M104 T0 S200` about 107 lines ahead with interpolated intermediate setpoints,
+      and T0 parked at 150 on every one of its 27 long idles; the PETG on T1 never
+      parked. Same idea, different model; the commands the firmware sees are the same.
+      Watch the first dual print for tool changes that wait noticeably on `M109`.
 
 ### Found by the 2.4.2 GUI slices (2026-09-07)
 
@@ -728,7 +783,11 @@ New difference, not previously seen:
       `v2.4.2:GCode.cpp:7717`–`7747` and emits nothing but `m_writer.toolchange(0)` —
       no `change_filament_gcode`, hence no `M109` after it. The CLI slice of the same
       profile emits no `T0` there at all, so **the harness is blind to this line.**
-      Why the CLI differs is not established.
+      Why the CLI differs — established 2026-09-07: `GCodeWriter::toolchange`
+      (`v2.4.2:GCodeWriter.cpp:576`) writes the `T` only when `multiple_extruders` is
+      true *or* `filament_diameter` has more than one entry. The GUI always carries two
+      filament slots on a two-extruder printer; the CLI single case loads one filament.
+      So the line is unavoidable in the GUI and cannot be reproduced from the CLI.
       Impact is probably nil — T0 is already the active tool, the start block having
       selected it — but the i-Fast's head auto-lift is firmware behaviour triggered by
       tool changes, so a redundant `T0` is worth one look on the first print: watch
@@ -740,6 +799,10 @@ Not a defect, worth stating: the dual file's tool-change **count** (51) and surf
 assignment differ from the reference's (49) because the user assigned extruders to
 different surfaces. That is a property of the job, not the profile — the same caveat the
 harness's own dual fixture carries.
+
+Both files **predate the first-print review** and still show the base's 500 mm/s
+travel, spiral lift and `M20x` preamble. Everything they prove above still holds;
+re-slicing them is an open item under **Open questions for the human**.
 
 ### Found by task 7 (packaging)
 
@@ -779,14 +842,68 @@ Packaging changed no profile value. It checked four things and added two files.
       comment syntax, so in-file attribution lives in the machine profile's
       `printer_notes`, which already names the base preset, the licence and the sources.
 
+### Found by the first-print review (2026-09-07)
+
+A review of what the sliced *body* asks the machine to do, against the reference and
+against QIDI's Cura definition (`reference/qidi-profiles/CURA/qidi.zip`, not mined
+before). The decisions are under **Decided**; what is still unverified:
+
+- [ ] **`TODO(verify):` `travel_speed` 100 — the ini says 130.** Two QIDI sources
+      disagree: the reference G-code (and the Cura definition that produced it) says
+      100 mm/s, `PrusaSlicer_fast.ini` says `travel_speed = 130`. G-code wins by rule;
+      130 is also sourced and safe to try if 100 feels slow. Either is a fraction of the
+      500 the base asked for.
+- [ ] **`TODO(verify):` retraction 1.5 mm @ 30 mm/s, no wipe — the ini says 2 mm @ 40.**
+      Same shape of disagreement: reference G-code and Cura say 1.5 @ `F1800` with no
+      wipe; the ini says `retract_length = 2`, `retract_speed = 40`, `wipe = 0`. Both
+      are QIDI's numbers. Neither is a calibration; the first print is.
+- [ ] **`TODO(verify):` `retraction_minimum_travel` 2 and `retract_when_changing_layer`
+      1 are the base's.** Cura says `retraction_min_travel 1.5`; the ini says
+      `retract_layer_change = 0`. Left at the base values (the ini agrees on 2 for the
+      first; a layer-change retract is harmless). Recorded so nobody thinks they were
+      checked.
+- [ ] **`TODO(verify):` `travel_speed_z` 5 reaches only OrcaSlicer's Z-only moves.**
+      Layer changes are folded into the layer's first XY travel (`G1 X Y Z F6000`), as
+      Cura does at `F300`; the Z component of such a move is tiny, so the firmware's
+      Z limit is what matters and QIDI Print relies on the same thing (its start block
+      moves Z 50 mm at `F3600`). The key does govern the descent to the first layer and,
+      on 2.3.1, the unlift at every tool change — both now `F300`.
+- [ ] **`TODO(verify):` OrcaSlicer parks *both* tools; QIDI Print parked only T0.**
+      With `ooze_prevention` on, whichever tool leaves gets the cooldown (unless it
+      returns within `preheat_time`). Cura only cooled a tool whose idle was long
+      enough, which in the reference job meant T0 and never the PETG on T1. On a job
+      where the tools alternate quickly this means more heat cycles than QIDI Print
+      would issue, never a hot oozing idle nozzle. Judge on the first dual print.
+- [ ] **`TODO(verify):` `M106 T-2 S255` lands one line later than in the reference.**
+      QIDI Print emits it just before `;LAYER:1` and before that layer's fan command;
+      OrcaSlicer's `layer_change_gcode` runs after its own `M106 S127` for the layer.
+      Same two commands, swapped; no reason to expect the firmware to care.
+
+Not unverified, but found and worth keeping:
+
+- [x] **The tool-change block does not under-prime.** Measured on the 2.4.2 GUI dual
+      slice, the 2.3.1 harness dual slice and the reference: the incoming extruder has
+      exactly 0 mm retract debt at its first printing move after every one of the
+      51 / 101 / 49 tool changes. Now a standing harness check (**Tool-change priming**)
+      with no registry entry, so it can never be accepted away.
+- [x] **Per-feature printing speeds already matched the reference** — walls 30, infill
+      60, first layer 20 mm/s — through inheritance. Only travel was wrong.
+- [x] **The harness gained two checks** (motion envelope, tool-change priming) and a
+      canonical form for temperature commands, and *lost* two registry entries
+      (`machine-limit-mcodes`, `spiral-z-lift`) so that those subjects fail the run if
+      they reappear. Verified: restoring `z_hop` 0.4 and `default_jerk` 8 fails with the
+      hop detector at 12.46 and `M205` in the census.
+
 ### From task 2 (the reference G-code extraction)
 
 - [ ] **`TODO(verify):` `M106 T-2 S255` / `M107 T-2` — which fan is `T-2`?** `-2` is not a
       valid extruder index. Both occurrences sit at a `;TIME_ELAPSED` boundary (end of
       layer 0, and the shutdown block), so it is not a per-tool part-cooling fan.
-      Candidates are the chamber circulation fan and the auxiliary/side fan. **Do not
-      guess** — the user has the machine. Matters because if it is the chamber fan, an
-      Orca profile that never emits it will run the enclosure differently from QIDI Print.
+      Candidates are the chamber circulation fan and the auxiliary/side fan. QIDI's Cura
+      definitions do not mention it; the QIDI Print engine adds it. **Do not guess** —
+      the user has the machine. Since 2026-09-07 the profile *reproduces* both commands
+      (see **Decided**), so the question no longer changes what the machine does, only
+      what we know about it; the first print answers it.
 - [ ] **`TODO(verify):` `M4010` payload encoding.** `M4010 X<w> Y<h>` followed by
       `M4010 I<offset> T<length> '<hex>'` chunks — a preview bitmap for the display
       (186×186 single, 304×304 dual). Undocumented. Orca cannot emit it. Cosmetic, but
@@ -796,8 +913,10 @@ Packaging changed no profile value. It checked four things and added two files.
       whether the i-Fast's "time remaining" readout misbehaves without it.
 - [ ] **`TODO(verify):` `preheat_time` vs Cura's ramp.** The reference preheats the parked
       hotend ~107 lines before the tool change (`M104 T0 S200`), with interpolated
-      intermediate setpoints (`S168.3`, `S155.4`). Orca's `preheat_time` is a different
-      model and will not reproduce those values. Only bites once a second material exists.
+      intermediate setpoints (`S168.3`, `S155.4`). Orca's `preheat_time` (30 s) is a
+      different model and will not reproduce those values. Now live, since ooze
+      prevention is on; the harness classifies the ramp values as an accepted Cura
+      artifact and the schedule difference as known. See the task-6 entry above.
 - [ ] **`TODO(verify):` chamber heater is never used.** Both references emit only
       `M141 S0` and no `M191`. The i-Fast has an actively heated chamber; QIDI Print
       simply does not drive it in these exports. Out of scope per the handoff, noted so

@@ -15,6 +15,18 @@ target version actually emits for a human using the profile the intended way.
 
 They are *our output*, not ground truth. `reference/` remains the authority.
 
+> **These two files predate the first-print review of 2026-09-07.** They were sliced
+> with the base's motion: travel at `F30000` (500 mm/s), a 0.4 mm spiral lift on every
+> retraction, a 2 mm @ 60 mm/s retract with wipe, and the `M201`/`M203`/`M204`/`M205`
+> preamble plus `M204 S500` / `M205 X8 Y8` in the body. Everything they prove below
+> still holds. They should be **re-sliced with the current profile** before the first
+> print; the replacements must show, in `; CONFIG_BLOCK`, `travel_speed = 100`,
+> `ooze_prevention = 1`, `idle_temperature = 150,150`,
+> `emit_machine_limits_to_gcode = 0`, and in the body: no `F30000`, no `M20x`, one Z
+> change per layer, retracts of 1.5 mm at `F1800`, `M106 T-2 S255` exactly once before
+> the second layer, and (dual) `M104 S150 T<n> ;cooldown` at tool changes with 0 mm
+> retract debt on the incoming tool — which `scripts/gcode_diff.py` now measures.
+
 ## What they prove
 
 Both files embed their own resolved config (`; CONFIG_BLOCK_START`), and it reads:

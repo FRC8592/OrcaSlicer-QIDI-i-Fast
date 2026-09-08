@@ -12,7 +12,7 @@ README.md or reference/extracted-gcode.md.
 Each rule is matched against a single difference item:
 
   kinds    which checks it applies to (start_block, end_block, temperature,
-           census, toolchange); empty means all
+           census, motion, toolchange, priming); empty means all
   contexts which comparison it applies to ("single", "dual"); empty means both.
            This is what keeps a fixture artifact from becoming a blanket excuse:
            the dual comparison's second filament is OrcaSlicer's stock
@@ -22,7 +22,15 @@ Each rule is matched against a single difference item:
   side     "ref"  the line exists only in the QIDI Print reference
            "ours" the line exists only in our slice
            None   either
-  pattern  regex matched against the difference text
+  pattern  regex matched against the difference text.  Temperature lines are
+           matched in canonical form (comment stripped, `T` before `S`).
+
+Things that are deliberately *absent* from this registry, so that their
+reappearance fails the run: the M201/M203/M204/M205 machine-limit preamble and
+the per-feature M204/M205, OrcaSlicer's spiral Z lift (G2/G3/G17 or a Z change
+per retraction), any travel feedrate above the reference's, and a non-zero
+retract debt at a tool change.  All were removed or ruled out by the first-print
+review (2026-09-07); see TODO.md "Decided".
 """
 
 import re
@@ -42,12 +50,6 @@ RULES = [
      "extracted-gcode.md §4"),
 
     # ---- things OrcaSlicer adds that the reference has not --------------------
-    ("machine-limit-mcodes", (), (), "ours", r"^M(201|203|204|205)\b",
-     "OrcaSlicer's machine_limits_usage default writes the limits to G-code; QIDI "
-     "Print writes none. The values themselves match PrusaSlicer_fast.ini. "
-     "Reported, not fixed: the machine profile is left alone until after a first "
-     "print (hard rule 8 — ask before changing the physical machine's behaviour).",
-     "TODO.md 'Found by task 5 — M201/M203/M204/M205'"),
     ("force-resume-fan-speed", (), (), "ours", r"^;_FORCE_RESUME_FAN_SPEED$",
      "OrcaSlicer appends this after change_filament_gcode to re-assert fan speed.",
      "CLAUDE.md 'How Orca actually emits a tool change', step 3"),
@@ -56,19 +58,26 @@ RULES = [
     ("commented-m105", (), (), "ref", r"^;M105$",
      "Commented-out temperature report in reference variants A and C; omitted.",
      "TODO.md 'Accepted diffs for task 6 introduced by task 3'"),
-    ("standby-drop-and-ramp", (), (), "ref", r"^M104 T[01] S(0|150|155\.4|168\.3)$",
-     "The parked hotend's standby drop and Cura's interpolated preheat ramp. "
-     "Deferred to ooze_prevention + idle_temperature once a second material exists.",
-     "TODO.md 'Deferred until a second material exists'"),
+    ("cura-preheat-ramp", (), (), "ref", r"^M104 T[01] S(0|155\.4|168\.3)$",
+     "Cura's interpolated preheat ramp (intermediate setpoints on the way back "
+     "from 150 C) and its final M104 T0 S0 when a tool is finished with. "
+     "OrcaSlicer preheats in one step. The 150 C standby drop itself is now "
+     "reproduced by ooze_prevention + idle_temperature and is no longer a "
+     "difference.",
+     "TODO.md 'Decided: ooze prevention', extracted-gcode.md §7"),
     ("toolchange-fan-speed", ("toolchange", "census"), (), None, r"^M10[67]\b",
      "Fan speed is a filament/process property OrcaSlicer owns; the reference's "
      "per-extruder Cura fan curve is out of scope for a single-PLA profile.",
      "TODO.md 'Accepted diffs', extracted-gcode.md §7 'Fan speeds'"),
-    ("toolchange-retract-prime", ("toolchange",), (), "ref", r"^G1 F<n> E<n>$",
-     "The reference's 8.5 mm retract before the T and 8.5 mm prime after it. "
-     "OrcaSlicer's tool-change path calls retract(toolchange=false) and owns the "
-     "retraction bookkeeping; hardcoding 8.5 mm would desync it by 6.5 mm.",
-     "TODO.md 'the 8.5 mm tool-change retract is not reproduced'"),
+    ("toolchange-retract-prime", ("toolchange", "motion"), ("dual",), None,
+     r"^(G1 F<n> E<n>|(retract|prime) \(mm, F\) set: .*)$",
+     "The reference retracts 8.5 mm before every T and primes 8.5 mm after it; "
+     "we retract and prime retract_length_toolchange = 2 mm, carried from the "
+     "base. Decided by the user 2026-09-07: leave at 2 mm until the first dual "
+     "print shows strings or blobs at the changes; 8.5 is a one-key change. The "
+     "single-extruder comparison, which has no tool change, must show identical "
+     "retract sets, so this rule is scoped to the dual case.",
+     "TODO.md 'CHECK AFTER THE FIRST DUAL PRINT: the tool-change retract'"),
 
     # ---- value-only differences that track the fixture, not the profile -------
     ("t1-heating-temperature", ("start_block", "temperature"), (), None,
@@ -104,11 +113,18 @@ RULES = [
      "tool-change check.",
      "handoff task 6"),
     ("fixture-toolchange-temperature", ("toolchange", "temperature"), ("dual",), None,
-     r"^(M109 S(2[34]0|250)|M104 S\d+ T[01] ; set nozzle temperature)$",
+     r"^M109 S(2[34]0|250)$",
      "FIXTURE: the temperature our change_filament_gcode blocks on is the incoming "
      "filament's. The reference's T1 held a 230 C PETG; the fixture's holds the "
      "stock Qidi Generic PETG at 240/250 C.",
      "extracted-gcode.md §7"),
+    ("toolpath-speeds", ("motion",), ("dual",), None, r"^printing: max F: .*",
+     "FIXTURE: per-feature print speeds are inherited from the stock @Qidi XMax "
+     "process and deliberately not converted from Cura (handoff task 4). The "
+     "reference's PLA walls/infill run at 30/60 mm/s, exactly ours — the "
+     "single-extruder comparison must show equal maxima — but its PETG job "
+     "printed at 25/50 mm/s, which no profile in this repo describes.",
+     "README.md 'Process profiles'"),
 
     # ---- OrcaSlicer's own bookkeeping comments -------------------------------
     ("orca-bookkeeping-comments", ("toolchange",), (), "ours",
@@ -117,16 +133,30 @@ RULES = [
      "OrcaSlicer's own G-code markers, which land inside the tool-change window. "
      "They are comments, not machine commands, and QIDI Print has no equivalent.",
      "handoff task 6 ('ignoring ... comments')"),
+    ("orca-cooldown-suppressed", ("toolchange",), ("dual",), "ours",
+     r"^; removed M104$",
+     "OrcaSlicer's post-processor drops the ooze-prevention cooldown when the "
+     "parked tool is needed again within preheat_time, leaving this comment in "
+     "its place — the same idle-time heuristic that made QIDI Print park only T0.",
+     "TODO.md 'Decided: ooze prevention'"),
 
-    # ---- OrcaSlicer's tool-change scheduling ---------------------------------
-    ("orca-preheat", ("temperature", "census", "toolchange"), ("dual",), None,
-     r"^M104( S\d+ T[01] ; preheat T[01] time: \d+s| T[01] S\d+)?$",
-     "The lookahead preheat of the parked hotend. Both slicers do it; the "
-     "schedules differ. QIDI Print issues M104 T0 S200 about 107 lines before the "
-     "tool change with interpolated intermediate setpoints; OrcaSlicer uses its "
-     "own preheat_time model and annotates the line. Recorded as a different "
-     "model, not a defect.",
-     "TODO.md 'preheat_time vs Cura's ramp', extracted-gcode.md §7"),
+    # ---- OrcaSlicer's tool-change temperature scheduling ---------------------
+    ("orca-standby-schedule", ("temperature", "census", "toolchange"), ("dual",),
+     None, r"^M104 T[01] S\d+$",
+     "Both slicers park the idle hotend (M104 T<n> S150, from idle_temperature) "
+     "and preheat it before its next use; the schedules differ. QIDI Print "
+     "ramps in steps about 107 lines ahead and parked only T0; OrcaSlicer "
+     "backtraces preheat_time (30 s), parks whichever tool is leaving, and "
+     "drops the cooldown again when the tool returns within the window. The "
+     "commands are the same; their number and placement are not.",
+     "TODO.md 'Decided: ooze prevention', extracted-gcode.md §7"),
+    ("ooze-post-toolchange-wait", ("temperature", "census", "toolchange"), ("dual",),
+     None, r"^M109 T[01] S\d+$",
+     "With ooze_prevention on, OrcaSlicer re-waits on the incoming tool after the "
+     "change (OozePrevention::post_toolchange, GCode.cpp:8044) with an explicit "
+     "T argument. It duplicates the M109 our change_filament_gcode already "
+     "emits and returns immediately; the reference waits once, without T.",
+     "TODO.md 'Decided: ooze prevention'"),
     ("toolchange-blocks-both-ways", ("temperature", "census", "toolchange"),
      ("dual",), None, r"^M109( S\d+)?$",
      "Our change_filament_gcode is variant C's shape, so it blocks on M109 at "
@@ -135,21 +165,13 @@ RULES = [
      "task 3 chose the safe one. This is why our M109 count is roughly double.",
      "TODO.md 'Tool change blocks (variant C shape)', extracted-gcode.md §7"),
 
-    # ---- the spiral Z lift ---------------------------------------------------
-    ("spiral-z-lift", (), (), "ours", r"^G(1[789]|2|3)\b",
-     "OrcaSlicer's spiral Z lift, from z_hop_types 'Auto Lift' carried out of the "
-     "base machine profile (arc fitting is off, enable_arc_fitting = 0). QIDI "
-     "Print emits no arcs and no interpolated lift at all. Already recorded as "
-     "needing a first-print check; hard rule 6 keeps the base motion behaviour.",
-     "TODO.md 'z_hop 0.4 with z_hop_types Auto Lift has no counterpart'"),
-
     # ---- differences that are documented but NOT yet resolved -----------------
     # These are in TODO.md awaiting a decision. They are listed under KNOWN in
     # the report, never hidden, and they do not fail the run — a *new* difference
     # does. Removing an entry from here is how a resolved question gets retired.
     ("orca-g92-e-resets", ("census",), (), None, r"^G92$",
-     "OrcaSlicer emits G92 E0 after every retraction and wipe; QIDI Print's "
-     "absolute E climbs monotonically and only resets in the start and end blocks. "
+     "OrcaSlicer emits G92 E0 after every retraction; QIDI Print's absolute E "
+     "climbs monotonically and only resets in the start and end blocks. "
      "Functionally equivalent under M82, structurally very different.",
      "TODO.md 'Found by task 6'"),
     ("orca-preamble-codes", ("census", "toolchange"), (), None,
@@ -185,11 +207,10 @@ KNOWN = {
     "orca-g92-e-resets",
     "orca-preamble-codes",
     "cura-midprint-temperature-reassert",
-    "machine-limit-mcodes",
-    "spiral-z-lift",
     "toolchange-retract-prime",
-    "standby-drop-and-ramp",
-    "orca-preheat",
+    "cura-preheat-ramp",
+    "orca-standby-schedule",
+    "ooze-post-toolchange-wait",
 }
 
 

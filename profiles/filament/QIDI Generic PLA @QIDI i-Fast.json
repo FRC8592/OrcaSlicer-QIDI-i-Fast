@@ -12,6 +12,9 @@
 	"nozzle_temperature": [
 		"200"
 	],
+	"idle_temperature": [
+		"150"
+	],
 	"cool_plate_temp": [
 		"80"
 	],
