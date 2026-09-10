@@ -62,6 +62,19 @@ printer and should not be re-researched:
   [`QidiConnectionManager.py`](https://github.com/MarkoS046/QidiPrint). Also seen and
   judged less useful: [3dWiFiSend](https://github.com/yandreev3/3dWiFiSend), an older
   X-Pro/X-Max script that works via the USB drive.
+- **The uploader is written**: [`qidi_send.py`](../qidi_send.py) at the repo root, ~11 KB,
+  stdlib only, Python 3. It handles the handshake and config parse, the WiFi-reboot retry,
+  one socket per session, `resend` recovery, progress to stderr, ASCII filename
+  sanitisation, and `SLIC3R_PP_OUTPUT_NAME` for the printer-side name. Modes:
+
+  ```bash
+  python3 qidi_send.py --ip 192.168.213.87 --status               # read-only probe
+  python3 qidi_send.py --ip 192.168.213.87 model.gcode            # upload only
+  python3 qidi_send.py --ip 192.168.213.87 --print model.gcode    # upload + START PRINTING
+  python3 qidi_send.py --ip 192.168.213.87 --compress model.gcode # use VC_compress if present
+  ```
+
+  `--print` is deliberately off by default, so an export cannot start a print by accident.
 - **`VC_compress_gcode`** — QIDI's closed-source compressor, which produces the `.gcode.tz`
   the printer wants for an on-screen preview and time estimate — is **not on this Mac**.
   Only `/Applications/QIDISlicer.app` is installed and does not bundle it. Plain `.gcode`
@@ -79,9 +92,10 @@ Post-processing Scripts, and the line that was in use read:
 /usr/bin/python3 "/Users/brad/bin/qidi_send.py" --ip 192.168.213.87 --quiet;
 ```
 
-Nothing in [`profiles/`](../profiles/) is touched. If the script is ever to ship from this
-repo it needs a home and a mention in [`README.md`](../README.md); right now it has
-neither.
+Nothing in [`profiles/`](../profiles/) is touched. The script sits at the repo root, which
+is a placement rather than a decision — [`scripts/`](../scripts/) currently means *the
+validation harness*, and neither [`README.md`](../README.md) nor
+[`CLAUDE.md`](../CLAUDE.md) §"Repo layout" mentions the uploader at all.
 
 ## Constraints
 
@@ -105,13 +119,9 @@ neither.
 There is no live record for this workstream — [`TODO.md`](../TODO.md) tracks unverified
 *profile values*, and none of this is one — so these are tracked here until that changes:
 
-- **The uploader itself is missing.** `HANDOFF.md` described a working `qidi_send.py`
-  (~11 KB, stdlib only, with `--status` / upload / `--print` / `--compress` modes,
-  handshake and config parse, the WiFi-reboot retry, single-socket sessions, `resend`
-  recovery, ASCII filename sanitisation for a ChiTu that chokes on spaces and accents, and
-  `SLIC3R_PP_OUTPUT_NAME` for the printer-side name) and pointed Orca at
-  `/Users/brad/bin/qidi_send.py`. **Neither that path nor any copy of the file exists on
-  this machine.** It has to be recovered or rewritten before anything else here can move.
+- **Where the uploader lives, and whether the repo admits it exists.** It is at the root
+  and documented nowhere; the Orca post-processing line above still points at
+  `/Users/brad/bin/qidi_send.py`, which does not exist. One of the two has to move.
 - **No real upload has ever happened.** `M28` / data / `M29` have been exercised only
   against a mock ChiTu server — 118 KB arrived byte-identical, the `resend` path fired,
   `M6030` was issued, sanitisation and the reboot retry both held. The printer has never
