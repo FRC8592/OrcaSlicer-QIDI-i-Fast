@@ -4,6 +4,10 @@ Every value that is not yet traced to the base OrcaSlicer profile, QIDI's publis
 profiles, or the reference G-code. Nothing ships with an invented default —
 see the "derive, don't invent" rule in [`CLAUDE.md`](CLAUDE.md).
 
+One section — **WiFi upload to the i-Fast** — is not about a sliced value at all. It is
+the live list for [`intent/0003`](intent/0003-wifi-upload-to-the-ifast.md), kept here
+because this file is where open work lives.
+
 ## Next steps
 
 The seven tasks, with current state
@@ -12,7 +16,9 @@ decomposed"). **All seven are done**, and a **first-print review**
 (2026-09-07) has since brought the print body's motion, the idle-nozzle temperature and
 one fan command into line with the reference — see **Found by the first-print review**
 below. What remains is not slicer work: a first print, and the physical checks listed
-under **Open questions for the human** and **Unverified profile values** below.
+under **Open questions for the human** and **Unverified profile values** below. Running
+alongside, and independent of all of it, is **WiFi upload to the i-Fast** — getting sliced
+G-code to the machine without a USB stick.
 
 - [x] **1. Recon the schema** — machine/process inherits chains, legacy-vs-Klipper
       machine inventory, user config dir, and the base-profile choice are recorded in
@@ -348,6 +354,75 @@ Revisit once 0.4 has produced a good print.
       otherwise.
 - [ ] **`bed_temperature_formula`.** Defaults to `by_highest_temp`. Harmless while every
       i-Fast filament profile says 80 °C; revisit if one ever doesn't.
+
+## WiFi upload to the i-Fast (`intent/0003`)
+
+A separate workstream from the profile, and the only part of this file that is not about
+a sliced value. Why it exists, the protocol facts, and the constraints are in
+[`intent/0003`](intent/0003-wifi-upload-to-the-ifast.md); this is the live list.
+
+**Safety rule for this whole section: never send `M6030` without asking first.** It starts
+a physical print on a machine that may be unattended. `qidi_send.py` keeps it behind
+`--print`, which is off by default — keep it that way.
+
+### Before anything can be tested
+
+- [ ] **Is the printer back on the network?** `ping -c 2 192.168.213.87`. It dropped off
+      mid-session on 2026-09-09 — ICMP failing, not just UDP — and had not returned. That
+      is known ChiTu WiFi-module flakiness and wants a power cycle, not debugging. Nothing
+      below can move until this answers.
+- [ ] **Run the read-only probe:** `python3 qidi_send.py --ip 192.168.213.87 --status`.
+      Writes nothing. Should report steps/mm, geometry, firmware, temps and print
+      progress. Close QIDI Print first — the module binds to one client source port and
+      answers a second one with `Error:IP is connected by IP:… already!`.
+
+### The first real upload
+
+- [ ] **Ask before it happens** — it writes a file to the printer's storage. Small,
+      obviously-named test file, and **no `--print`**. Then confirm it appears in the file
+      list, on the touchscreen or via `M20`.
+- [ ] **If `M28` fails, suspect storage before suspecting the script.** `M20` returned an
+      empty file list, which may mean nothing was mounted. Try it with a USB drive in.
+- [ ] **`M6030` has never been issued to real hardware.** Even once the upload works, the
+      start-print path is unproven. Separate step, separate consent.
+
+### Wiring it into OrcaSlicer
+
+- [ ] **The post-processing line points at a file that does not exist.** Print Settings →
+      Others → Post-processing Scripts currently reads
+      `/usr/bin/python3 "/Users/brad/bin/qidi_send.py" --ip 192.168.213.87 --quiet;`
+      and there is no `~/bin/qidi_send.py`. Either copy the script there or repoint Orca
+      at the checkout — but decide, because the two drift otherwise.
+- [ ] **Does this repo ship the uploader?** It sits at the root by placement, not
+      decision. [`scripts/`](scripts/) currently means *the validation harness*, and
+      neither [`README.md`](README.md) nor [`CLAUDE.md`](CLAUDE.md) §"Repo layout"
+      mentions the script at all. If it ships: a home, a layout line, and a README
+      section. If it does not: it should be ignored rather than tracked.
+- [ ] **Reconcile the README's wording.** [`README.md`](README.md) §"Deliberately not
+      configured" says the i-Fast has no network transport. That is still true *of the
+      profile* — hard rule 3 is untouched, Orca has no host type for this protocol — but
+      the repo now carries a tool that contradicts it at a glance. Worth a sentence.
+
+### Unverified in the script itself
+
+- [x] **Block framing matches the documented protocol** (verified 2026-09-09).
+      `frame()` was checked against an independent reimplementation across empty,
+      single-byte, 1280-byte and maximum-offset payloads: payload, then a 4-byte
+      little-endian offset, then an XOR over payload-plus-offset bytes, then `0x83`.
+- [ ] **Everything above the framing is mock-tested only.** `M28` / data / `M29` were
+      exercised against a mock ChiTu server — 118 KB byte-identical, `resend` path fired,
+      sanitisation and the WiFi-reboot retry both held — and never against the printer.
+      **The mock is not in this repo**, so that result cannot be re-run; it is the
+      handoff's word. If the real upload misbehaves, the mock has to be rebuilt.
+- [ ] **`--compress` cannot work on this Mac and fails quietly.** The script probes
+      `/Applications/QIDI Print.app/…/VC_compress_gcode_MAC` and a `QIDI-Print.app`
+      variant; only `/Applications/QIDISlicer.app` is installed and no `VC_compress*`
+      binary exists anywhere under `/Applications` (checked 2026-09-09). So the flag logs
+      "not found" and sends plain G-code — correct behaviour, but it means the printer
+      screen gets no preview and no time estimate, and the compression path is entirely
+      untested. Decide whether that is acceptable or whether the binary gets sourced.
+- [ ] **No bound on `resend` recovery.** A printer that keeps asking for the same offset
+      loops forever. Not worth fixing before a real upload proves the path is even used.
 
 ## Unverified profile values
 
@@ -971,3 +1046,21 @@ comment string.
       `M141 S0` and no `M191`. The i-Fast has an actively heated chamber; QIDI Print
       simply does not drive it in these exports. Out of scope per the brief, noted so
       nobody reads `M141 S0` as "the machine has no chamber heater".
+
+### Found by the WiFi work (2026-09-09)
+
+- [ ] **`TODO(verify):` the printer reports a build volume this repo does not.** The
+      `M4001` handshake came back `ok X:0.010611 Y:0.010611 Z:0.002500 E:0.007300
+      T:0/372/250/321/2 U:'UTF-8' B:1`, whose `T:` field parses as machine type `0` then
+      **372 / 250 / 321**. The profile ships `printable_area` `0x0, 330x0, 330x250, 0x250`
+      and `printable_height` `320`, both taken from QIDI's own
+      `PrusaSlicer_fast.ini` (`bed_shape`, `max_print_height` — see
+      [`README.md`](README.md)). Y agrees; **X is 42 mm wider and Z 1 mm taller** in what
+      the firmware reports.
+      The benign reading is that firmware reports axis travel, not printable area — a
+      dual-extruder machine needs X travel beyond the plate so the idle head can park off
+      it, and 42 mm is about a carriage spacing. The alarming reading is that the ini
+      understates the real bed. **Do not widen the profile on the strength of this** —
+      that would be inventing a value against two published sources, and hard rule 1
+      forbids it. What settles it: measure the plate, or watch where the head can travel.
+      Recorded because `intent/0003` surfaced it and nothing else in the repo would have.

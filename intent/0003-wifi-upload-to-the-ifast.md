@@ -116,26 +116,20 @@ validation harness*, and neither [`README.md`](../README.md) nor
 
 ## Open questions
 
-There is no live record for this workstream — [`TODO.md`](../TODO.md) tracks unverified
-*profile values*, and none of this is one — so these are tracked here until that changes:
+The live list is [`TODO.md`](../TODO.md) §"WiFi upload to the i-Fast", which is where
+these get worked and ticked — reachability and the read-only probe, the first real upload
+and the consent around it, where the script lives and whether the repo admits it exists,
+and what is still unverified inside the script itself. Not duplicated here, or the two
+drift.
 
-- **Where the uploader lives, and whether the repo admits it exists.** It is at the root
-  and documented nowhere; the Orca post-processing line above still points at
-  `/Users/brad/bin/qidi_send.py`, which does not exist. One of the two has to move.
-- **No real upload has ever happened.** `M28` / data / `M29` have been exercised only
-  against a mock ChiTu server — 118 KB arrived byte-identical, the `resend` path fired,
-  `M6030` was issued, sanitisation and the reboot retry both held. The printer has never
-  seen them. It dropped off the network mid-session (ICMP failing, not just UDP) and had
-  not come back; that is known ChiTu module flakiness and wants a power cycle, not
-  debugging.
-- **The printer reports a bed this repo does not.** `M4001` came back
-  `T:0/372/250/321/2` — read as 372 × 250 × 321, against the 330 × 250 × 320 the profile
-  carries from QIDI's own `PrusaSlicer_fast.ini`. Noticed while writing this up, not
-  chased. It may be firmware reporting motion limits rather than printable area, but if
-  it is not, it is a profile value that is wrong, and it belongs in
-  [`TODO.md`](../TODO.md) rather than here.
-- **Does the printer need storage mounted to accept a write?** `M20` returned an empty
-  file list, which may mean nothing was mounted. First suspect if `M28` fails.
+Two that shape the intent rather than the task list:
+
+- **The printer reports a bed this repo does not.** `M4001` returns `T:0/372/250/321/2`
+  against the 330 × 250 × 320 the profile carries from QIDI's own `PrusaSlicer_fast.ini`.
+  Probably firmware reporting axis travel rather than printable area — a second head has
+  to park somewhere — but if it is not, a shipped value is wrong. It is a *profile*
+  question that only this workstream would ever have surfaced, so it is filed under
+  [`TODO.md`](../TODO.md) §"Found by the WiFi work", not here.
 - **Is the manual route good enough?** Slicing in Orca, exporting, and sending from QIDI
   Print works today with zero setup. If the script cannot be made reliable, that is the
   fallback and this intent gets dropped rather than fought.
