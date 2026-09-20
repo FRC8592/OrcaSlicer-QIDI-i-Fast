@@ -68,13 +68,16 @@ printer and should not be re-researched:
   sanitisation, and `SLIC3R_PP_OUTPUT_NAME` for the printer-side name. Modes:
 
   ```bash
-  python3 qidi_send.py --ip 192.168.213.87 --status               # read-only probe
-  python3 qidi_send.py --ip 192.168.213.87 model.gcode            # upload only
-  python3 qidi_send.py --ip 192.168.213.87 --print model.gcode    # upload + START PRINTING
-  python3 qidi_send.py --ip 192.168.213.87 --compress model.gcode # use VC_compress if present
+  python3 qidi_send.py --ip <printer-ip> --status               # read-only probe
+  python3 qidi_send.py --ip <printer-ip> model.gcode            # upload only
+  python3 qidi_send.py --ip <printer-ip> --print model.gcode    # upload + START PRINTING
+  python3 qidi_send.py --ip <printer-ip> --compress model.gcode # use VC_compress if present
   ```
 
   `--print` is deliberately off by default, so an export cannot start a print by accident.
+  `<printer-ip>` stands for the machine's address on the LAN throughout this repo; the
+  real one is not written down here, and `--ip` has no default — the script refuses to
+  run without it.
 - **`VC_compress_gcode`** — QIDI's closed-source compressor, which produces the `.gcode.tz`
   the printer wants for an on-screen preview and time estimate — is **not on this Mac**.
   Only `/Applications/QIDISlicer.app` is installed and does not bundle it. Plain `.gcode`
@@ -82,14 +85,14 @@ printer and should not be re-researched:
 
 ## Affected users and systems
 
-Me, and the physical i-Fast at 192.168.213.87. On the Orca side this is a
+Me, and the physical i-Fast at its fixed address on my LAN. On the Orca side this is a
 **post-processing script** on the print profile, not a printer setting — Orca appends the
 sliced file path to the command and runs it on export, which is the closest thing to an
 Upload button that exists for this protocol. The hook is Print Settings → Others →
 Post-processing Scripts, and the line that was in use read:
 
 ```
-/usr/bin/python3 "/Users/brad/bin/qidi_send.py" --ip 192.168.213.87 --quiet;
+/usr/bin/python3 "/Users/brad/bin/qidi_send.py" --ip <printer-ip> --quiet;
 ```
 
 Nothing in [`profiles/`](../profiles/) is touched. The script sits at the repo root, which

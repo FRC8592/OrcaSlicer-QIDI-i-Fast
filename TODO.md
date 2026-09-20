@@ -367,11 +367,11 @@ a physical print on a machine that may be unattended. `qidi_send.py` keeps it be
 
 ### Before anything can be tested
 
-- [ ] **Is the printer back on the network?** `ping -c 2 192.168.213.87`. It dropped off
+- [ ] **Is the printer back on the network?** `ping -c 2 <printer-ip>`. It dropped off
       mid-session on 2026-09-09 — ICMP failing, not just UDP — and had not returned. That
       is known ChiTu WiFi-module flakiness and wants a power cycle, not debugging. Nothing
       below can move until this answers.
-- [ ] **Run the read-only probe:** `python3 qidi_send.py --ip 192.168.213.87 --status`.
+- [ ] **Run the read-only probe:** `python3 qidi_send.py --ip <printer-ip> --status`.
       Writes nothing. Should report steps/mm, geometry, firmware, temps and print
       progress. Close QIDI Print first — the module binds to one client source port and
       answers a second one with `Error:IP is connected by IP:… already!`.
@@ -390,7 +390,7 @@ a physical print on a machine that may be unattended. `qidi_send.py` keeps it be
 
 - [ ] **The post-processing line points at a file that does not exist.** Print Settings →
       Others → Post-processing Scripts currently reads
-      `/usr/bin/python3 "/Users/brad/bin/qidi_send.py" --ip 192.168.213.87 --quiet;`
+      `/usr/bin/python3 "/Users/brad/bin/qidi_send.py" --ip <printer-ip> --quiet;`
       and there is no `~/bin/qidi_send.py`. Either copy the script there or repoint Orca
       at the checkout — but decide, because the two drift otherwise.
 - [ ] **Does this repo ship the uploader?** It sits at the root by placement, not

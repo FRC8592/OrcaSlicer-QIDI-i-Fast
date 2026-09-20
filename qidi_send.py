@@ -4,7 +4,7 @@
 
 Designed to be usable as an OrcaSlicer post-processing script:
 
-    /usr/bin/python3 /path/to/qidi_send.py --ip 192.168.213.87;
+    /usr/bin/python3 /path/to/qidi_send.py --ip <printer-ip>;
 
 Orca appends the sliced G-code path as the final argument. Add --print to start
 the print immediately after upload (off by default -- upload only).
