@@ -31,6 +31,17 @@ the per-feature M204/M205, OrcaSlicer's spiral Z lift (G2/G3/G17 or a Z change
 per retraction), any travel feedrate above the reference's, and a non-zero
 retract debt at a tool change.  All were removed or ruled out by the first-print
 review (2026-09-07); see TODO.md "Decided".
+
+The first dual print (2026-09-12, failed) retired four entries: the 2 mm
+tool-change retract, ooze prevention's second M109, its "; removed M104", and
+our M109 firing in both directions.  All four described behaviour the rewritten
+change_filament_gcode no longer has.  Nothing was added in their place, because
+no dual slice has been produced since the rewrite -- the 2.4.2 CLI cannot slice
+two filaments and there is no fallback slicer on macOS.  **The next dual run
+will therefore report differences this registry has never seen**, including the
+park move our block emits where the reference parks with a Y as well.  That is
+the intended failure mode: judge them against the reference, then register the
+deliberate ones.  See TODO.md "Found by the first dual print".
 """
 
 import re
@@ -61,24 +72,14 @@ RULES = [
     ("cura-preheat-ramp", (), (), "ref", r"^M104 T[01] S(0|155\.4|168\.3)$",
      "Cura's interpolated preheat ramp (intermediate setpoints on the way back "
      "from 150 C) and its final M104 T0 S0 when a tool is finished with. "
-     "OrcaSlicer preheats in one step. The 150 C standby drop itself is now "
-     "reproduced by ooze_prevention + idle_temperature and is no longer a "
-     "difference.",
-     "TODO.md 'Decided: ooze prevention', extracted-gcode.md §7"),
+     "OrcaSlicer preheats in one step. (The 150 C standby drop was reproduced by "
+     "ooze_prevention + idle_temperature between 2026-09-07 and 2026-09-20; it "
+     "is a difference again — see standby-drop-not-reproduced.)",
+     "TODO.md 'Found by the first dual print', extracted-gcode.md §7"),
     ("toolchange-fan-speed", ("toolchange", "census"), (), None, r"^M10[67]\b",
      "Fan speed is a filament/process property OrcaSlicer owns; the reference's "
      "per-extruder Cura fan curve is out of scope for a single-PLA profile.",
      "TODO.md 'Accepted diffs', extracted-gcode.md §7 'Fan speeds'"),
-    ("toolchange-retract-prime", ("toolchange", "motion"), ("dual",), None,
-     r"^(G1 F<n> E<n>|(retract|prime) \(mm, F\) set: .*)$",
-     "The reference retracts 8.5 mm before every T and primes 8.5 mm after it; "
-     "we retract and prime retract_length_toolchange = 2 mm, carried from the "
-     "base. Decided by the user 2026-09-07: leave at 2 mm until the first dual "
-     "print shows strings or blobs at the changes; 8.5 is a one-key change. The "
-     "single-extruder comparison, which has no tool change, must show identical "
-     "retract sets, so this rule is scoped to the dual case.",
-     "TODO.md 'CHECK AFTER THE FIRST DUAL PRINT: the tool-change retract'"),
-
     # ---- value-only differences that track the fixture, not the profile -------
     ("t1-heating-temperature", ("start_block", "temperature"), (), None,
      r"^;?M10[49] T1 S\d+(\.\d+)?$",
@@ -133,37 +134,18 @@ RULES = [
      "OrcaSlicer's own G-code markers, which land inside the tool-change window. "
      "They are comments, not machine commands, and QIDI Print has no equivalent.",
      "task 6 ('ignoring ... comments')"),
-    ("orca-cooldown-suppressed", ("toolchange",), ("dual",), "ours",
-     r"^; removed M104$",
-     "OrcaSlicer's post-processor drops the ooze-prevention cooldown when the "
-     "parked tool is needed again within preheat_time, leaving this comment in "
-     "its place — the same idle-time heuristic that made QIDI Print park only T0.",
-     "TODO.md 'Decided: ooze prevention'"),
 
     # ---- OrcaSlicer's tool-change temperature scheduling ---------------------
-    ("orca-standby-schedule", ("temperature", "census", "toolchange"), ("dual",),
-     None, r"^M104 T[01] S\d+$",
-     "Both slicers park the idle hotend (M104 T<n> S150, from idle_temperature) "
-     "and preheat it before its next use; the schedules differ. QIDI Print "
-     "ramps in steps about 107 lines ahead and parked only T0; OrcaSlicer "
-     "backtraces preheat_time (30 s), parks whichever tool is leaving, and "
-     "drops the cooldown again when the tool returns within the window. The "
-     "commands are the same; their number and placement are not.",
-     "TODO.md 'Decided: ooze prevention', extracted-gcode.md §7"),
-    ("ooze-post-toolchange-wait", ("temperature", "census", "toolchange"), ("dual",),
-     None, r"^M109 T[01] S\d+$",
-     "With ooze_prevention on, OrcaSlicer re-waits on the incoming tool after the "
-     "change (OozePrevention::post_toolchange, GCode.cpp:8044) with an explicit "
-     "T argument. It duplicates the M109 our change_filament_gcode already "
-     "emits and returns immediately; the reference waits once, without T.",
-     "TODO.md 'Decided: ooze prevention'"),
-    ("toolchange-blocks-both-ways", ("temperature", "census", "toolchange"),
-     ("dual",), None, r"^M109( S\d+)?$",
-     "Our change_filament_gcode is variant C's shape, so it blocks on M109 at "
-     "every tool change. QIDI Print blocks only when switching to T0 (variant C) "
-     "and not on later switches to T1 (variant B). One string cannot be both; "
-     "task 3 chose the safe one. This is why our M109 count is roughly double.",
-     "TODO.md 'Tool change blocks (variant C shape)', extracted-gcode.md §7"),
+    ("standby-drop-not-reproduced", ("temperature", "census", "toolchange"),
+     ("dual",), "ref", r"^M104 T[01] S\d+$",
+     "The reference parks the idle hotend at 150 C and ramps it back; we no "
+     "longer do. ooze_prevention was turned off on 2026-09-20 because its "
+     "post_toolchange emitted a second blocking M109 on top of the one in "
+     "change_filament_gcode, and the failing dual print spent most of its wall "
+     "clock waiting. The standby drop is recoverable without that cost, by "
+     "putting the reference's own M104 S150 T<previous> inside the block — open "
+     "in TODO.md, not done.",
+     "TODO.md 'Found by the first dual print', extracted-gcode.md §7"),
 
     # ---- differences that are documented but NOT yet resolved -----------------
     # These are in TODO.md awaiting a decision. They are listed under KNOWN in

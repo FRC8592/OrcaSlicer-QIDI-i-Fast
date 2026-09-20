@@ -11,7 +11,7 @@
 	"travel_speed_z": "5",
 	"default_acceleration": "0",
 	"default_jerk": "0",
-	"ooze_prevention": "1",
+	"ooze_prevention": "0",
 	"compatible_printers": [
 		"QIDI i-Fast 0.4 nozzle",
 		"Qidi X-Max 0.4 nozzle"

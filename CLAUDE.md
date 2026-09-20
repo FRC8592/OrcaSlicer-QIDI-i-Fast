@@ -43,6 +43,27 @@ Plus 4 / Plus 5, which are Klipper machines with a completely different motion s
 | User config dir | `~/.var/app/com.orcaslicer.OrcaSlicer/config/OrcaSlicer/user/default/{machine,process,filament}/` — **the flatpak sandbox, not `~/.config/OrcaSlicer`** (that tree belongs to the AppImages, schema `01.08.04.51`) |
 | Vendors enabled | Anycubic only. **QIDI is not enabled**, so `inherits` will not resolve until the config wizard installs QIDI → X-Max |
 
+### The repo is on macOS now (2026-09-20)
+
+The table above describes a Linux box and is left intact, but the working copy lives at
+`/Users/brad/IdeaProjects/OrcaSlicer-QIDI-i-Fast` on macOS, where there is **no clone and
+no flatpak**. OrcaSlicer 2.4.2 is installed as an app bundle and carries the Qidi system
+bundle, so the harness runs with two overrides:
+
+```bash
+ORCA_CMD="/Applications/OrcaSlicer.app/Contents/MacOS/OrcaSlicer" \
+ORCA_SYSTEM_DIR="$HOME/Library/Application Support/OrcaSlicer/system/Qidi" \
+  bash scripts/validate.sh
+```
+
+The single-extruder case passes unchanged. **The dual case is BLOCKED here**:
+`ORCA_DUAL_CMD` defaults to a Linux 2.3.1 AppImage that does not exist, and 2.4.2's own
+CLI segfaults on any two-filament slice (rc 139 — the same upstream bug as on Linux,
+now confirmed on a second platform). So the harness cannot see the tool-change block on
+this machine, and dual evidence has to come from a GUI slice into `samples/`.
+Source-code line references throughout this file were taken from the clone and cannot be
+re-checked from here.
+
 **Target version: OrcaSlicer 2.4.2** (decided 2026-09-07). The working tree is a
 2.5.0-dev nightly, so pull base profiles from the tag, not the tree:
 `git show v2.4.2:"resources/profiles/Qidi/machine/Qidi X-Max 0.4 nozzle.json"`.
@@ -165,7 +186,13 @@ Useful placeholders: `change_filament_gcode` gets `next_extruder`, `previous_ext
 (`PrintConfig.cpp:11384`, `11428`+). `machine_start_gcode` gets `is_extruder_used`
 (`coBools`, set at `GCode.cpp:2901`–`2904`, before start-G-code processing at `:3022`)
 and `bed_temperature_initial_layer_single` (`:3034`). The parser supports
-`{cond ? a : b}` and `{if}{else}{endif}` (`PlaceholderParser.cpp:2215`–`2220`).
+`{cond ? a : b}` and `{if}{else}{endif}` (`PlaceholderParser.cpp:2215`–`2220`) — but
+**a comparison inside a ternary must be parenthesised**: `{x == 0 ? a : b}` fails with
+*"Parsing error. Expecting tag alternative"*, caret on the `==`, while
+`{(x == 0) ? a : b}` parses. `{if x == 0}…{else}…{endif}` needs no parentheses.
+Verified against 2.4.2 on 2026-09-20 by probing all four forms through
+`machine_start_gcode`; the repo's only earlier ternary is a bare boolean
+(`{is_extruder_used[1] ? 19 : 0}`) and never exercised this.
 
 **`use_relative_e_distances` defaults to `true`** and the whole base chain leaves it
 unset — so the explicit `"0"` in our profile is a necessary fix, not documentation.
@@ -283,6 +310,16 @@ Headlines:
   the parked T0 to `M104 T0 S150` before the `T`. The literal `E8.5` prime comes *after*
   the `T`. The parked hotend's return to 200 °C is issued ~107 lines *earlier*, mid-print,
   outside the tool-change block entirely. Full taxonomy in §7 of the extraction.
+- **The tool change happens at the bed edge, not on the part — and that is the whole
+  point of it.** Every change is preceded by `G0 X330 Y89.6` (24×, before a `T0`) or
+  `G0 X0.00 Y89.6` (25×, before a `T1`), and the `E8.5` prime is a **purge dumped there**,
+  clear of the print. The return is staged through `X165 Y89.6` (49×, `X165` = bed centre)
+  with `Z` restored on the first leg. This was missed until the first dual print
+  (2026-09-20) and it is the reason that print failed: without the park, OrcaSlicer runs
+  `change_filament_gcode` wherever the last extrusion ended — measured at 100 of 100 tool
+  changes standing inside an object footprint. `Y89.6` is Cura-computed from that one
+  object and is **not** a machine constant; our block parks in X only. See `README.md`
+  §*Park and purge* and `TODO.md` §*Found by the first dual print*.
 
 ## QIDI's published profiles
 
@@ -355,8 +392,16 @@ the firmware auto-lift — that is separate and stays untouched — it is the te
 half of the same idea. Conveniently it is only supported with SEMM **off**
 (`Print.cpp:1522`), which is what we are already doing.
 
-**Enabled since 2026-09-07** (user decision, first-print review): `ooze_prevention: "1"`
-on every process profile, `idle_temperature: ["150"]` on the PLA filament. Mechanics at
+**Disabled since 2026-09-20** (first dual print). It was enabled on 2026-09-07 and the
+temperature model was never the problem — the **second blocking wait** was.
+`post_toolchange` emits its own `M109 S<t> T<n>` on top of the one in
+`change_filament_gcode`, so every change waited twice with both nozzles standing on the
+part; the failing two-cube job reached 5 % in 15 minutes against Orca's own 43m49s
+estimate. `ooze_prevention` is now `"0"` on every process profile.
+`idle_temperature: ["150"]` stays on the PLA filament but is inert. If the idle nozzle
+oozes now that a purge exists, the way back is the reference's own line —
+`M104 S150 T{previous_extruder}` before the `T`, inside `change_filament_gcode` — not this
+flag. Mechanics at
 `v2.4.2`: `OozePrevention::pre_toolchange` (`GCode.cpp:267`) emits a non-blocking
 `M104 S<idle> T<old> ;cooldown` before the change; `post_toolchange` (`:293`) emits an
 `M109` for the new tool after it (on top of ours); the `GCodeProcessor` post-pass
@@ -426,8 +471,9 @@ grouped by source, so an audit of `profiles/` against the flattened base turns u
 undocumented; keep it that way when adding a key. Attribution lives in three places that
 must stay consistent: `NOTICE`, `README.md` §Attribution, and the machine profile's own
 `printer_notes` (JSON has no comments). The install instructions in `README.md` are the
-procedure that produced the copy under
-`~/.var/app/com.orcaslicer.OrcaSlicer/config/OrcaSlicer/user/default/`, which is
+procedure that produced the installed copy — under
+`~/.var/app/com.orcaslicer.OrcaSlicer/config/OrcaSlicer/user/default/` on the Linux box,
+`~/Library/Application Support/OrcaSlicer/user/default/` on macOS — which is
 byte-identical to `profiles/` — re-verify that after changing a profile.
 
 `.gitignore` excludes `/.idea/`, `*.iml` (JetBrains-opened project), `/out/` for
@@ -490,10 +536,11 @@ the repo (or another location the sandbox can reach), or the slicer reports
 `No such file` and exits `-3`.
 
 **The 2.4.2 CLI aborts on *any* two-filament slice** with a `std::vector` out-of-range
-assertion. Upstream bug, not ours — it reproduces with OrcaSlicer's own stock
+assertion — and on macOS with a plain SIGSEGV, rc 139 (2026-09-20), which confirms it is
+platform-independent. Upstream bug, not ours — it reproduces with OrcaSlicer's own stock
 `Lulzbot Taz Pro Dual 0.5 nozzle` preset and with a single-nozzle machine. The harness
 falls back to the 2.3.1 AppImage (`ORCA_DUAL_CMD`) for the dual case and labels the
-result. Details and the full list of what was ruled out are in `TODO.md`
+result; **there is no such fallback on macOS**, so the dual check is BLOCKED there. Details and the full list of what was ruled out are in `TODO.md`
 §"Found by task 6".
 
 Block boundaries used by the harness are unique in all three files: the start block is
@@ -541,6 +588,33 @@ behaviour in the repo — the harness drives the CLI, and the two paths differ.
   comes from the one-filament early return in `GCode::set_extruder` (see above). The CLI
   slice of the same profile does not emit it, so the harness is blind to it. Recorded in
   `TODO.md`.
+
+## First dual print (2026-09-12) — and what it changed
+
+Three prints: one head, both heads, the other head. The single-head jobs printed; **the
+two-head job failed** — stuck for a few layers, went spongey, came off the plate. The
+G-code and photos are **local working files, not committed** — this repo carries
+profiles and documentation, not print evidence. The write-up is in
+[`intent/0004`](intent/0004-make-the-dual-extruder-print-work.md) and `TODO.md`
+§"Found by the first dual print".
+
+Standing facts that came out of it:
+
+- **The firmware head lift is not the problem, and the control print proves it.**
+  `reference/dual-extruder.gcode` — QIDI Print's own dual file — printed unmodified and
+  came off the plate intact (2026-09-20). When a dual print fails, **print the control
+  file first**; it separates machine from profile in one go and costs 45 minutes.
+- **A custom `change_filament_gcode` runs wherever the last extrusion ended.** Orca does
+  not move the head for you. Without an explicit park, the whole block — the `T`, the
+  blocking `M109`, the purge — executes on top of the part. Measured at 100 of 100 tool
+  changes in the failing file. This is why the tool-change block now parks; see the
+  bed-edge bullet under "Ground truth" above.
+- **The two heads are not aligned in XY**, visible as a non-concentric band in the
+  control print. Pre-existing, firmware-side, and **not** a reason to touch
+  `extruder_offset` — hard rule 5 still holds.
+- **`ooze_prevention` adds a second blocking `M109` per change**, on top of whatever
+  `change_filament_gcode` does. It is off since 2026-09-20; see "Standby / idle nozzle
+  temperature" above.
 
 ## Definition of done
 

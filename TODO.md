@@ -15,7 +15,18 @@ The seven tasks, with current state
 decomposed"). **All seven are done**, and a **first-print review**
 (2026-09-07) has since brought the print body's motion, the idle-nozzle temperature and
 one fan command into line with the reference — see **Found by the first-print review**
-below. What remains is not slicer work: a first print, and the physical checks listed
+below.
+
+Then the printing started. Single-head prints came off fine; **the first dual print
+failed** (2026-09-12), and the tool-change block has been rewritten around a park and a
+purge as a result — see **Found by the first dual print** below, and
+[`intent/0004`](intent/0004-make-the-dual-extruder-print-work.md). That rewrite has
+**not yet been executed by a slicer**: it needs a 2.4.2 GUI slice of a two-cube job,
+because the CLI cannot slice two filaments and no fallback exists on this machine.
+That is the next thing to do.
+
+Also open, and not slicer work: the two heads are **not aligned in XY** — visible in the
+control print, so it is a firmware calibration, not ours — plus the physical checks listed
 under **Open questions for the human** and **Unverified profile values** below. Running
 alongside, and independent of all of it, is **WiFi upload to the i-Fast** — getting sliced
 G-code to the machine without a USB stick.
@@ -430,8 +441,16 @@ _Populated as profiles are written._
 
 ### From task 3 (the machine profile)
 
-- [ ] **CHECK AFTER THE FIRST DUAL PRINT: the tool-change retract stays at 2 mm.**
-      **Decided 2026-09-07 (user): leave it at 2 mm for now.** It cannot matter on a
+- [x] **Resolved 2026-09-20 by the first dual print: it is now `["0","0"]`, and the
+      8.5 mm lives in `change_filament_gcode` instead.** The first dual print failed,
+      and the retract depth turned out to be the smaller half of the problem — the
+      block had no *park*, so Orca ran it standing on the part 100 times out of 100.
+      Reproducing the reference's park-and-purge means owning both the retract and the
+      purge, which is why this key is zeroed rather than raised to 8.5: Orca places its
+      own pair on the part, at the wrong end of the travel. See **Found by the first
+      dual print** below. The mechanism recorded here stays correct and is what made
+      the zeroing safe to reason about.
+      **Original entry, 2026-09-07 (user): leave it at 2 mm for now.** It cannot matter on a
       single-extruder print — there is no tool change — so the question is entirely about
       the first *multi-head* job. Judge it there, on stringing and ooze at the changes:
       if there are strings or blobs, set `retract_length_toolchange` to `["8.5","8.5"]`,
@@ -790,7 +809,10 @@ them as fixture artifacts rather than profile defects:
 
 #### Confirmed: our tool change blocks in both directions, the reference does not
 
-- [ ] **`TODO(verify):` `M109` fires at every tool change; QIDI Print blocks only for T0.**
+- [x] **Resolved 2026-09-20: `M109` now fires only when switching to T0.**
+      The rewritten block uses `{if next_extruder == 0}M109 …{else}M104 …{endif}`, which
+      is what the reference does. The first dual print made it urgent rather than
+      theoretical — see **Found by the first dual print** below. Original entry:
       `change_filament_gcode` is variant C's shape, so every switch waits for
       temperature. The reference blocks on `M109 S200` when switching **to T0** (variant
       C, 24×) but not on later switches to T1 (variant B, which relies on T1 already
@@ -926,6 +948,115 @@ Packaging changed no profile value. It checked four things and added two files.
       is QIDI's own output rather than ours, and a no-affiliation statement. JSON has no
       comment syntax, so in-file attribution lives in the machine profile's
       `printer_notes`, which already names the base preset, the licence and the sources.
+
+### Found by the first dual print (2026-09-20)
+
+Three prints on 2026-09-12 — one head, both heads, the other head. The single-head jobs
+printed; the two-head job stuck for a few layers, went spongey and came off the plate.
+G-code and photos are **local working files and are not committed** — filenames below
+are pointers for whoever has them, not paths in this repo. Written up in
+[`intent/0004`](intent/0004-make-the-dual-extruder-print-work.md).
+
+#### Ruled out: the heads do lower after a tool change
+
+- [x] **The firmware head lift is fine.** The starting hypothesis was that a head was not
+      dropping all the way back after a `T`. Three things say otherwise. Every one of the
+      100 body tool changes is followed by an absolute `G1 Z<layer> F300` before the next
+      extrusion, so the slicer always re-commands Z. `CUBE-head2.gcode` performs a real
+      `T0`→`T1` change after its start block and printed correctly. And the **control
+      print settled it**: `reference/dual-extruder.gcode`, QIDI Print's own dual file,
+      printed unmodified and came off the plate intact (2026-09-20,
+      `PXL_20260920_213350134.jpg`, local). Hard rule 4 stands — nothing here
+      touches the lift.
+
+#### Fixed
+
+- [x] **The tool change ran standing on the part, 100 times out of 100.** OrcaSlicer runs
+      a custom `change_filament_gcode` wherever the previous extrusion ended. Measured by
+      script over `CUBEx2-multi.gcode`: every `T` line executed with the head inside an
+      object footprint (X 155–175, Y 104–124 or 126–146) at print Z. With `z_hop = 0`,
+      `wipe = 0` and `reduce_crossing_wall = 0`, the incoming nozzle then arrived drooled
+      and de-pressurised and got 2 mm of prime at the start of the next wall — the strands
+      radiating across the whole plate in `PXL_20260912_170507605.jpg` (local) are
+      that, every layer, for 100 layers. QIDI Print
+      parks at the bed edge and dumps 8.5 mm of purge there instead — 24 parks at `X330`,
+      25 at `X0.00`, 49 staged returns through `X165 Y89.6`. Fixed by rewriting the block;
+      see `README.md` §*Park and purge*.
+- [x] **Ooze prevention was waiting twice per tool change.** `OozePrevention::post_toolchange`
+      emits its own blocking `M109 S<t> T<n>` on top of the one in `change_filament_gcode`.
+      The failing print reached 5 % in 15 minutes (`PXL_20260912_161351797.jpg`, local) against
+      OrcaSlicer's own `43m 49s` estimate for the whole job, and the 15 cooldowns that
+      survived the 30 s backtrace all fell in the slow early layers — where the part
+      stopped sticking. `ooze_prevention` is now `"0"` in all five process profiles.
+      `idle_temperature: ["150"]` stays in the filament profile but is now inert.
+- [x] **A parenthesis bug that would have refused to slice.** `{x == 0 ? a : b}` does not
+      parse — *"Parsing error. Expecting tag alternative"*, caret on the `==`. The working
+      form is `{(x == 0) ? a : b}`. `{if x == 0}…{else}…{endif}` needs no parentheses.
+      Verified against 2.4.2 by probing all four forms through `machine_start_gcode`.
+      Worth remembering: the repo's only prior ternary (`{is_extruder_used[1] ? 19 : 0}`)
+      is a bare boolean and never exercised this.
+
+#### Still open
+
+- [ ] **`TODO(verify):` the park sweeps X at whatever Y the head is on.** The reference
+      parks at `X330 Y89.6` / `X0.00 Y89.6`, but that `Y` is Cura-computed from one
+      object and would be an invented constant here — and an unsafe one, 89.6 mm into a
+      250 mm bed. Ours moves in X only. **Limitation: an object sitting at higher X in
+      the same Y band as the part being left would be crossed by the sweep**, at print Z
+      with no hop. Fine for anything centred on the plate; needs a real multi-object
+      layout to prove out. If it bites, the fix is a staged return like the reference's
+      (`G0 X165 Y<clear>` at the end of the block) with a `Y` taken from the machine, not
+      from Cura.
+- [ ] **The rewritten block has not been executed by a slicer.** It parses and expands
+      correctly — verified by probing it through `machine_start_gcode` on 2.4.2, which
+      produced exactly the intended nine lines — but no *tool change* has run it. The
+      2.4.2 CLI cannot slice two filaments (see below; it segfaults on macOS too, rc 139,
+      which corroborates the upstream bug on a second platform) and no 2.3.1 fallback
+      exists on this machine. **Needs a 2.4.2 GUI slice of the two-cube job**, checked for:
+      every `T` at `X0` or `X330` and none inside an object footprint; `G1 F1200 E8.5`
+      immediately after each `T`; `M109` only on switches to T0.
+- [ ] **Stringing to the left and right plate edges is expected, and unquantified.** The
+      control print did it too — the strands run to `X0` and `X330`, the two parks. QIDI's
+      return leg is un-retracted; ours should be better, because the 8.5 mm retract
+      precedes the park move and Orca's own travel retract covers the return. Nobody has
+      compared the two yet. Discount the control's severity for T1 running at 230 °C, the
+      reference's PETG temperature, with PLA loaded.
+- [ ] **The standby drop is gone with `ooze_prevention` off.** The reference has it and
+      the control print used it successfully. If the idle nozzle oozes now that a purge
+      exists, the way back is *not* this flag but the reference's own line —
+      `M104 S150 T{previous_extruder}` before the `T`, inside `change_filament_gcode` —
+      which buys the standby without a second blocking wait.
+
+#### The two heads are not aligned in XY — and it is not ours
+
+- [ ] **The nozzle offset needs calibrating on the machine.** In the control print's
+      close-up (`PXL_20260920_213836060.jpg`, local) the two materials' nested walls
+      are not concentric: the band is wide on one side and pinched to nothing on the
+      opposite side. The reference model nests them 0.4 mm apart (T0's outer wall spans
+      X155.2–174.8, T1's inner walls 156.4–173.6, 156–174, 155.6–174.4), so a uniform
+      band is what correct alignment looks like — and the band vanishing on one side puts
+      the error at ≥ 0.4 mm on that axis. Half of widest-minus-narrowest gives the
+      magnitude.
+      **That part came off QIDI Print's own G-code**, with no OrcaSlicer profile involved,
+      so this is pre-existing and was silently degrading the failed print too.
+      **No profile key changes**: hard rule 5 keeps `extruder_offset` at `["0x0","0x0"]`
+      because the i-Fast applies offsets in firmware and a slicer value would double-apply
+      (QIDI's own `PrusaSlicer_fast.ini` agrees: `extruder_offset = 0x0,0x0`). The action
+      is the machine's own XY offset calibration, then re-print the control file and check
+      the band is even. Log the measured offset here when it is known.
+
+#### The harness runs on macOS now, with overrides
+
+- [ ] **`scripts/validate.sh` defaults to the Linux flatpak; this repo is on macOS.**
+      It runs with:
+      `ORCA_CMD="/Applications/OrcaSlicer.app/Contents/MacOS/OrcaSlicer"` and
+      `ORCA_SYSTEM_DIR="$HOME/Library/Application Support/OrcaSlicer/system/Qidi"`.
+      The single-extruder case passes unchanged — **10 accepted, 6 known, 0 unexpected**.
+      The dual case is **BLOCKED**: `ORCA_DUAL_CMD` points at a Linux AppImage that does
+      not exist here, so the run exits non-zero on a blocked check rather than on a real
+      difference. Either build a macOS fallback slicer or make the dual case's evidence a
+      GUI sample; until then the harness cannot see the tool-change block at all on this
+      machine. `CLAUDE.md` §Environment still describes the Linux box.
 
 ### Found by the first-print review (2026-09-07)
 

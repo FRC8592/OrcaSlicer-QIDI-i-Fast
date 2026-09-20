@@ -25,3 +25,10 @@ __pycache__/
 
 # release workflow output
 /dist/
+
+# Print evidence: photos off the machine and G-code exported for a test print.
+# Working files, never committed -- this repo carries profiles and the
+# documentation of where their values came from, not the prints they produced.
+# TODO.md and intent/0004 name the ones worth keeping; they live beside the repo.
+/Photos-1-001/
+/*.gcode
