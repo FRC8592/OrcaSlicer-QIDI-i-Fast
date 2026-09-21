@@ -311,12 +311,30 @@ parks at `X330` before a `T0`, 25 at `X0.00` before a `T1`, 49 staged returns th
 G92 E0
 G1 F1200 E-8.5
 G92 E0
-G0 X{(next_extruder == 0) ? 330 : 0} F6000
+{if next_extruder == 1}M104 S150 T0
+{endif}G0 X{(next_extruder == 0) ? 330 : 0} Y5 F6000
 T{next_extruder}
 G92 E0
 {if next_extruder == 0}M109 S{new_filament_temp}{else}M104 S{new_filament_temp}{endif}
 G1 F1200 E8.5
 G92 E0
+G0 X165 Y5 F6000
+```
+
+Expanded, switching **to T0** and **to T1** respectively:
+
+```gcode
+G92 E0                      G92 E0
+G1 F1200 E-8.5              G1 F1200 E-8.5
+G92 E0                      G92 E0
+                            M104 S150 T0     ; park the tool being left
+G0 X330 Y5 F6000            G0 X0 Y5 F6000   ; bed edge, in the prime lane
+T0                          T1
+G92 E0                      G92 E0
+M109 S200   ; blocks        M104 S200        ; does not block
+G1 F1200 E8.5               G1 F1200 E8.5    ; purge, clear of the parts
+G92 E0                      G92 E0
+G0 X165 Y5 F6000            G0 X165 Y5 F6000 ; stage before Orca's travel
 ```
 
 | Line | Source |
@@ -325,15 +343,20 @@ G92 E0
 | park at `X330` for T0, `X0` for T1 | Reference: the two park columns, counted above. Both are proven reachable by both nozzles — our own start block primes T1 from `X0` and T0 to `X5`, full width |
 | `M109` only when switching **to** T0, `M104` otherwise | Reference §7: switching to T0 blocks on `M109 S200`; switching to T1 does not |
 | the bracketing `G92 E0` | Ours, and load-bearing. Under absolute E `G1 E-8.5` means *move E to −8.5*, not *retract 8.5*; zeroing first makes the number mean what it reads as. The trailing one restores the `E = 0` invariant Orca expects after a tool change, so its own travel retract and prime still balance |
+| `M104 S150 T0`, only when leaving T0 | Reference §7: the dual file parks T0 at 150 °C 27 times and **never parks T1**. That asymmetry is not arbitrary — a parked tool needs a blocking wait on its return, and only T0 has one. Added 2026-09-20 (second dual print) |
+| the `Y5` park lane and the `X165 Y5` staging move | The lane our own start block already primes in (`G1 X330 Y5 F3600` / `G1 X5 A19 F2400`) — known clear, known reachable by both nozzles. `X165` is bed centre, as in the reference's `X165 Y89.6` staging point. Added 2026-09-20 |
 
 **Two deliberate deviations from the reference**, both recorded in `TODO.md`:
 
-- **Park in X only, at whatever Y the head is already at.** The reference parks at
-  `Y89.6`, which Cura computed from that one object and which would be an invented
-  constant here — and an unsafe one, 89.6 mm deep into a 250 mm bed. Sweeping X to the
-  edge leaves the object footprint immediately and returns along the same band.
-  *Limitation*: an object at higher X in the same Y band as the part being left would be
-  crossed by the sweep.
+- **The park and staging Y is `5`, not the reference's `89.6`.** Cura computed `89.6` from
+  one object's position; as a fixed constant it would sit 89.6 mm into a 250 mm bed and
+  collide with anything placed there. `Y5` is the lane our own start block already primes
+  in, so it is derived from this profile rather than from Cura's arithmetic.
+  *Limitation*: an object within ~5 mm of the bed's front edge would be in the way.
+  (Until 2026-09-20 the park moved in X only, keeping whatever Y the head was on. The
+  second dual print showed why that is not enough: the return then dives diagonally from
+  the bed edge onto the part's start point and lays the purge's trailing string across it —
+  visible as stringing on the `X330` side of the T0 cube, 51 changes' worth.)
 - **Retract before the park move**, where the reference parks first and retracts there.
   QIDI can afford that because it already retracted 1.5 mm for its wipe; we have not.
   A side benefit: the outbound leg is retracted, and Orca's own travel retract covers the

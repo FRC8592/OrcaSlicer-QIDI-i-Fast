@@ -609,6 +609,22 @@ Standing facts that came out of it:
   blocking `M109`, the purge — executes on top of the part. Measured at 100 of 100 tool
   changes in the failing file. This is why the tool-change block now parks; see the
   bed-edge bullet under "Ground truth" above.
+- **Parking is not enough on its own — the *return* has to be staged too.** The second
+  dual print (2026-09-20) parked and purged correctly and still failed. Orca's travel
+  after the block goes straight from wherever the block left the head to the next print
+  point, so a park at the bed edge turns into a diagonal that lays the purge's trailing
+  string across the part. The reference stages through `X165 Y89.6` for exactly this
+  reason. Ours stages through `X165 Y5` — our own start block's prime lane, since `Y89.6`
+  is Cura's arithmetic on one object.
+- **Two objects is not the same job as two materials.** The reference prints *one* object
+  in two materials, so its head never travels between separate parts. Ours does, and every
+  tool change is also an object change. When the reference's scheme is not enough, check
+  whether this is why before blaming the block.
+- **A standby drop needs a blocking wait to be safe, and a static block cannot preheat
+  ahead.** QIDI parks only T0 (27×) and never T1 — because only T0's return blocks on
+  `M109`. Copy that asymmetry; a symmetric drop plus a non-blocking `M104` means printing
+  under temperature. `ooze_prevention`'s post-processor is the only thing that can
+  backtrace a preheat, and it costs a second blocking `M109`.
 - **The two heads are not aligned in XY**, visible as a non-concentric band in the
   control print. Pre-existing, firmware-side, and **not** a reason to touch
   `extruder_offset` — hard rule 5 still holds.

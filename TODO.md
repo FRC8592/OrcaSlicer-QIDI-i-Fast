@@ -996,20 +996,53 @@ are pointers for whoever has them, not paths in this repo. Written up in
       Worth remembering: the repo's only prior ternary (`{is_extruder_used[1] ? 19 : 0}`)
       is a bare boolean and never exercised this.
 
+#### Second dual print (2026-09-20): the block works, the travel does not
+
+The park-and-purge block ran as designed — 101 parks, `M104` for T1 and `M109` for T0,
+50m28s estimated against the old five hours. The dual print "was working better", but the
+T1 (front) cube came off the bed at about half height, and both cubes were strung.
+
+- [x] **The tool change is the whole story — proven by a controlled test.** The same two
+      cubes, at the same coordinates, on the same *uncleaned* plate, sliced for **one
+      extruder** (so: two objects, same per-cube layer dwell, same bed patch, no tool
+      changes) printed past 18 mm with both adhering. Every other variable is controlled:
+      geometry, dwell, plate condition, bed position, and each tool individually
+      (`CUBE-head2.gcode` printed T1's cube at exactly `X155.2–174.9, Y104.1–123.8`, the
+      failed cube's footprint, and stuck).
+      **This corrects a claim made here earlier**: the "doubled layer dwell" explanation
+      was wrong. Orca prints two objects *by layer*, so a single-extruder two-object job
+      has the same per-cube dwell as a dual one. The earlier reasoning compared dual-two-
+      cubes against single-*cube*-alone and conflated "two objects" with "two tools".
+- [x] **The stringing map named the mechanism.** `park X330 → T0 → back cube` (51×),
+      `park X0 → T1 → front cube` (50×). The user reported stringing **on the right side
+      of the T0 cube** — `X330` is the right edge and T0's park. The return leg was a
+      single diagonal from the bed edge to the part's start point, so the string trailing
+      from each purge was laid onto the part, 51 times. Fixed by staging the return
+      through `X165 Y5` and parking in the `Y5` prime lane, which is the reference's own
+      shape (`X165 Y89.6`) with a Y this profile can justify.
+- [x] **The standby drop is back, in the reference's asymmetric form.** `M104 S150 T0`
+      before the `T`, only when leaving T0 — QIDI parks T0 27× and never parks T1.
+      **Cost, and it is real**: T0's return blocks on `M109 S200` from wherever it has
+      fallen to, with no preheat-ahead, because a static block cannot backtrace one the
+      way `ooze_prevention`'s post-processor does. Expect roughly 10–25 minutes on a
+      100-layer two-cube job. It is one `{if}` to remove if that is not worth it.
+
 #### Still open
 
-- [ ] **`TODO(verify):` the park sweeps X at whatever Y the head is on.** The reference
-      parks at `X330 Y89.6` / `X0.00 Y89.6`, but that `Y` is Cura-computed from one
-      object and would be an invented constant here — and an unsafe one, 89.6 mm into a
-      250 mm bed. Ours moves in X only. **Limitation: an object sitting at higher X in
-      the same Y band as the part being left would be crossed by the sweep**, at print Z
-      with no hop. Fine for anything centred on the plate; needs a real multi-object
-      layout to prove out. If it bites, the fix is a staged return like the reference's
-      (`G0 X165 Y<clear>` at the end of the block) with a `Y` taken from the machine, not
-      from Cura.
-- [ ] **The rewritten block has not been executed by a slicer.** It parses and expands
-      correctly — verified by probing it through `machine_start_gcode` on 2.4.2, which
-      produced exactly the intended nine lines — but no *tool change* has run it. The
+- [x] **Resolved 2026-09-20: it bit, and the staged return is in.** The X-only park
+      left the return as a single diagonal from the bed edge onto the part's start point,
+      which laid each purge's trailing string across the part. The block now parks and
+      stages in the `Y5` prime lane (`G0 X<edge> Y5` … `G0 X165 Y5`), the reference's own
+      shape with a Y this profile can justify.
+- [ ] **`TODO(verify):` `Y5` as the park and staging lane.** It is where our own start
+      block primes, so it is known clear and known reachable by both nozzles — but it is
+      a lane *choice*, not a reference value. **Limitation: an object placed within ~5 mm
+      of the bed's front edge would be in the way.**
+- [ ] **The block has been executed once (2026-09-12 slice, printed 2026-09-20) and then
+      changed again.** The park-and-purge version ran on the machine and behaved as
+      designed; the staged-return + standby version that replaced it has only been
+      *probed* — both branches expand correctly through `machine_start_gcode` on 2.4.2 —
+      and no tool change has run it. The
       2.4.2 CLI cannot slice two filaments (see below; it segfaults on macOS too, rc 139,
       which corroborates the upstream bug on a second platform) and no 2.3.1 fallback
       exists on this machine. **Needs a 2.4.2 GUI slice of the two-cube job**, checked for:
