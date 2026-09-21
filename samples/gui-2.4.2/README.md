@@ -1,8 +1,16 @@
 # GUI slices, OrcaSlicer 2.4.2
 
 Two G-code files sliced **by hand, in the OrcaSlicer 2.4.2 GUI**, on 2026-09-07, from the
-same 20 mm box STL the QIDI Print references were made from, with the profile as it
-stands after the first-print review of the same day.
+same 20 mm box STL the QIDI Print references were made from, with the profile as it stood
+after the first-print review of the same day.
+
+> **Superseded for the tool change (2026-09-20).** The dual file here shows the
+> `change_filament_gcode` that *failed on the machine* — three lines, no park, no purge —
+> and `ooze_prevention = 1`. Both were changed after the first dual print; see
+> `README.md` §*Park and purge* and `TODO.md` §*Found by the first dual print*. Everything
+> these files establish about preset resolution, bed type, the `is_extruder_used[1]`
+> conditional, motion and the end block still holds. **A re-slice with the current
+> profile is the outstanding verification step** — the CLI cannot produce it.
 
 | File | Job |
 |---|---|
