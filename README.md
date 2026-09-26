@@ -111,10 +111,10 @@ If a preset does not appear at all, the log is the only place that says why:
 `~/.config/OrcaSlicer/log/` for an AppImage.
 
 This procedure is the one that produced the copy installed on the development machine;
-all seven installed files are byte-identical to `profiles/` — re-verified 2026-09-20 under
-`~/Library/Application Support/OrcaSlicer/user/default/` after the park-and-purge change.
+all seven installed files are byte-identical to `profiles/` — re-verified 2026-09-26 under
+`~/Library/Application Support/OrcaSlicer/user/default/`.
 
-### Two operational warnings
+### Four operational warnings
 
 - **Copy, never edit in place.** If a preset throws while loading, OrcaSlicer *deletes
   the file* (`v2.4.2:Preset.cpp:1641`–`1651`). This repo is the source of truth; the
@@ -122,6 +122,50 @@ all seven installed files are byte-identical to `profiles/` — re-verified 2026
 - **A missing or unparseable `version` key is a silent no-op** — the preset is skipped
   with no log line at all (`Preset.cpp:1653`–`1656`). If a hand-edited preset vanishes
   from the GUI, check `version` first.
+- **Copy with OrcaSlicer closed, and expect it to rewrite the file if you ever save from
+  the GUI.** A GUI save does not write back what this repo ships: it writes only the keys
+  that *differ from the inherited parent*, and adds its own. Measured on 2026-09-26, one
+  save turned the 62-key machine profile into 55 — it dropped the whole `machine_max_*`
+  block, `gcode_flavor`, `printer_variant`, `single_extruder_multi_material`,
+  `manual_filament_change`, `type` and `instantiation`, added 15 keys of its own, and
+  rewrote `version` from `02.04.00.06` to `2.4.0.6`. **Nothing there changes behaviour** —
+  every dropped key is identical to the value `inherits` supplies, which a slice confirmed
+  (`single_extruder_multi_material = 0`, `use_relative_e_distances = 0`,
+  `nozzle_diameter = 0.4,0.4`, motion limits unraised, zero `M20x`). But the byte-identity
+  claim above holds only until someone saves, and the explicit keys exist so that an audit
+  of `profiles/` against the flattened base turns up nothing undocumented. Re-copy from
+  `profiles/` afterwards.
+- **A `.3mf` project overrides the installed presets, and restarting does not clear it.**
+  A project embeds a full snapshot of the presets it was saved with, under the same preset
+  *names*, and OrcaSlicer honours the snapshot over the files on disk. On 2026-09-26 this
+  cost an afternoon: the correct block was on disk and the session log confirmed
+  `load config successful`, yet three consecutive slices — including one after
+  `File → New Project` — carried a superseded tool-change block, with no "modified" marker
+  on the preset to show it. See [Confirming a slice used the shipped
+  profile](#confirming-a-slice-used-the-shipped-profile).
+
+### Confirming a slice used the shipped profile
+
+Presets resolving in the GUI is not proof the *current* ones were used. Every exported
+G-code embeds its own `; CONFIG_BLOCK`, so check the file rather than the UI:
+
+```bash
+grep -m1 "^; change_filament_gcode = " out.gcode     # the block that actually ran
+grep -E "^; (single_extruder_multi_material|use_relative_e_distances|nozzle_diameter) = " out.gcode
+```
+
+For a two-extruder job the counts are the quickest signal that the tool-change block is
+the current one — on a two-object, 100-layer plate:
+
+```bash
+grep -cE '^G0 X(330|0) Y5 F6000' out.gcode   # parks, one per tool change
+grep -c  '^G0 X165 Y5 F6000'     out.gcode   # staged returns, same count
+grep -c  '^M104 S150 T0'         out.gcode   # standby drops, only the changes leaving T0
+```
+
+If those come back zero, the slice used a stale preset — a project snapshot, or an
+OrcaSlicer session started before the files were updated. Start a new project, re-select
+the three presets, and re-check before printing.
 
 ### Updating and uninstalling
 

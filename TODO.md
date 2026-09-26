@@ -1060,6 +1060,35 @@ T1 (front) cube came off the bed at about half height, and both cubes were strun
       `M104 S150 T{previous_extruder}` before the `T`, inside `change_filament_gcode` —
       which buys the standby without a second blocking wait.
 
+#### Getting the profile into OrcaSlicer is less reliable than it looks (2026-09-26)
+
+- [x] **A `.3mf` project overrides the installed presets, and a restart does not clear
+      it.** Three consecutive slices carried a superseded `change_filament_gcode` while
+      the correct one sat on disk and the session log said `load config successful and
+      preset name is: QIDI i-Fast 0.4 nozzle`. The project embeds a preset snapshot under
+      the same *name*, and Orca honours it — **with no "modified" marker on the preset**,
+      so there was nothing to discard and re-selecting did not help. `File → New Project`
+      did not clear it either. What did: pasting the block into the GUI and saving over
+      the preset. Documented in `README.md` §*Four operational warnings* and
+      §*Confirming a slice used the shipped profile*.
+- [x] **A GUI save does not write back what this repo ships.** It writes only keys that
+      differ from the inherited parent: 62 keys became 55 — the whole `machine_max_*`
+      block, `gcode_flavor`, `printer_variant`, `single_extruder_multi_material`,
+      `manual_filament_change`, `type`, `instantiation` dropped; 15 of Orca's own added;
+      `version` rewritten `02.04.00.06` → `2.4.0.6`. Behaviourally identical — a slice
+      confirmed every dropped key resolves the same through `inherits` — but it breaks
+      the byte-identity invariant, and the explicit keys exist so an audit of `profiles/`
+      turns up nothing undocumented. Re-synced from `profiles/` 2026-09-26.
+- [ ] **`TODO(verify):` pasting multi-line G-code into the GUI captures the surrounding
+      whitespace.** A paste from a terminal arrived with 2 leading spaces per line and
+      each line right-padded to ~160 characters — 1384 characters of whitespace in a
+      266-character block. Harmless except on one line: `custom_gcode_changes_tool`
+      (`GCode.cpp:241`) suppresses Orca's own `T<n>` only when the custom block has a bare
+      `T<next_extruder>` **at line start**, so the indent would have produced a duplicate
+      tool change — and on this machine every `T` triggers the firmware head lift. Caught
+      before printing; the exported file now shows 0 duplicate `T` lines. **Not verified
+      that the indent actually breaks the check** — it was fixed rather than tested.
+
 #### The two heads are not aligned in XY — and it is not ours
 
 - [ ] **The nozzle offset needs calibrating on the machine.** In the control print's
