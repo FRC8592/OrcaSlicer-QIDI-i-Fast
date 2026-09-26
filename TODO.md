@@ -354,6 +354,48 @@ plainly that those variants are unproven.
 
 Revisit once 0.4 has produced a good print.
 
+## Planned: an optimised fork, once the factory-faithful profile prints
+
+Wanted by the user (2026-09-26), **gated on the current profile producing a good dual
+print**. The profile in `profiles/` exists to reproduce what QIDI Print does on this
+machine, and "derive, don't invent" ([hard rule 1](CLAUDE.md#hard-rules-do-not-relax-these))
+is what keeps it honest. A profile aimed at *printing well* rather than at *matching the
+reference* is a different goal and cannot share that rule — so it is a fork, not a change
+to these files.
+
+No intent has been written for it yet, deliberately: `CLAUDE.md` says not to write one for
+work nobody has picked up. **Write `intent/0005` when the work starts**, in the
+originator's own words, and the questions below become its starting material rather than
+a checklist to inherit.
+
+Candidates this project has already surfaced and deliberately not acted on, each with the
+evidence that raised it:
+
+- **Symmetric standby, or none at all.** The reference's park-T0-only is a duty-cycle
+  decision on a 78/22 job and is arbitrary on a symmetric plate — see the `TODO(verify)`
+  under *Found by the first dual print*.
+- **Prime tower.** Needs `use_relative_e_distances = 1`; 2.4.2 refuses the slice otherwise
+  (exit `-51`, reproduced by task 6). Absolute E is a fidelity constraint, not a technical
+  one, so a fork can simply drop it — at the cost of re-validating the tool-change block,
+  which reroutes through `WipeTowerIntegration::append_tcr`.
+- **Z-hop on travel.** `z_hop = 0` comes from the reference, which never sweeps 330 mm to
+  a park. 101 travels at layer height past a contracting part is the profile's own
+  invention, and the hop is its natural counter.
+- **`ooze_prevention` with its preheat backtrace**, accepting the second `M109` in
+  exchange for a standby that does not stall — the only mechanism that can schedule a
+  preheat ahead of a tool change.
+- **Fan curve.** Flat `M106 S255` from layer 3 against the reference's per-tool
+  127.5/255 alternation; the values are inherited from stock `Qidi Generic PLA`, not
+  derived from anything QIDI published for this machine.
+- **Brim, and object spacing.** Neither is a profile value, but both were implicated in
+  the failures and belong in a tuned process preset.
+- **Pressure advance, flow, retraction tuning** — all out of scope here by the brief, and
+  the whole point of a fork.
+
+Keeping the two apart matters: `profiles/` must stay auditable against
+`reference/extracted-gcode.md`, and the validation harness in `scripts/` is built on that
+premise. A fork gets its own harness expectations, or none.
+
 ## Deferred until a second material exists
 
 - [x] **Ooze prevention / idle nozzle temperature — done, see Decided.** The dual
@@ -1026,6 +1068,24 @@ T1 (front) cube came off the bed at about half height, and both cubes were strun
       fallen to, with no preheat-ahead, because a static block cannot backtrace one the
       way `ooze_prevention`'s post-processor does. Expect roughly 10–25 minutes on a
       100-layer two-cube job. It is one `{if}` to remove if that is not worth it.
+      **Correction 2026-09-26, and a limitation it exposes.** This entry, `README.md` and
+      `CLAUDE.md` all claimed the asymmetry followed from "only T0's return blocks on
+      `M109`". That is backwards — the blocking `M109` is a *consequence* of parking T0.
+      QIDI parks the **idle** nozzle: measured over `dual-extruder.gcode`, T0 makes 1549
+      extruding moves (21.5 %, median segment 56) against T1's 5655 (78.5 %, median 210),
+      so T1 does four-fifths of the printing and T0 idles in long stretches. It is Cura's
+      standby-temperature threshold, not a rule about tool index.
+- [ ] **`TODO(verify):` the reference's parking asymmetry does not transfer to a symmetric
+      job, and we ship it anyway.** Two objects with one head each is ~50/50 duty with
+      equal idle stretches; QIDI's own logic applied to that plate says park *both* or
+      park *neither*, never "park T0". What ships is the literal reference behaviour, so
+      nozzle 1 pays a temperature wait at every change and nozzle 2 never does, for no
+      reason grounded in the print. **Kept deliberately** (user decision 2026-09-26): the
+      factory-faithful profile stays faithful, and the choice belongs in the optimised
+      fork below. Decide it on evidence — if nozzle 2's object strings noticeably worse
+      than nozzle 1's, the idle nozzle at 200 °C is a real ooze source and symmetry is
+      worth the doubled wait; if the stringing is even, the standby is costing time for
+      nothing and the `{if}` should come out.
 
 #### Still open
 

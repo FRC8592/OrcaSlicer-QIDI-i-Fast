@@ -387,8 +387,36 @@ G0 X165 Y5 F6000            G0 X165 Y5 F6000 ; stage before Orca's travel
 | park at `X330` for T0, `X0` for T1 | Reference: the two park columns, counted above. Both are proven reachable by both nozzles — our own start block primes T1 from `X0` and T0 to `X5`, full width |
 | `M109` only when switching **to** T0, `M104` otherwise | Reference §7: switching to T0 blocks on `M109 S200`; switching to T1 does not |
 | the bracketing `G92 E0` | Ours, and load-bearing. Under absolute E `G1 E-8.5` means *move E to −8.5*, not *retract 8.5*; zeroing first makes the number mean what it reads as. The trailing one restores the `E = 0` invariant Orca expects after a tool change, so its own travel retract and prime still balance |
-| `M104 S150 T0`, only when leaving T0 | Reference §7: the dual file parks T0 at 150 °C 27 times and **never parks T1**. That asymmetry is not arbitrary — a parked tool needs a blocking wait on its return, and only T0 has one. Added 2026-09-20 (second dual print) |
+| `M104 S150 T0`, only when leaving T0 | Reference §7: the dual file parks T0 at 150 °C 27 times and **never parks T1**. Reproduced literally. See [Why only T0](#why-only-t0-is-parked) — the reason is duty cycle, not tool index, and it does not transfer cleanly to a symmetric job. Added 2026-09-20, explanation corrected 2026-09-26 |
 | the `Y5` park lane and the `X165 Y5` staging move | The lane our own start block already primes in (`G1 X330 Y5 F3600` / `G1 X5 A19 F2400`) — known clear, known reachable by both nozzles. `X165` is bed centre, as in the reference's `X165 Y89.6` staging point. Added 2026-09-20 |
+
+##### Why only T0 is parked
+
+Because that is what QIDI's file does, and this profile reproduces it literally. The
+*reason* QIDI does it is duty cycle, measured in `dual-extruder.gcode`:
+
+| | extruding moves | share | median segment |
+|---|---:|---:|---:|
+| T0 | 1549 | 21.5 % | 56 moves |
+| T1 | 5655 | 78.5 % | 210 moves |
+
+T1 does four-fifths of the printing; T0 idles in long stretches. QIDI parks the idle
+nozzle — Cura's standby-temperature threshold — and leaves the busy one at temperature.
+Nothing about it is a rule concerning tool *index*.
+
+**So the asymmetry does not transfer to a symmetric job.** Two objects, one per head, is
+roughly 50/50 duty with equal idle stretches; QIDI's own logic applied to that plate says
+park both or park neither, not "park T0". What ships is the literal reference behaviour,
+which on such a plate means nozzle 1 pays a temperature wait at every change and nozzle 2
+never does, for no reason grounded in the print. That is a known, deliberate consequence
+of fidelity — see `TODO.md`.
+
+**And our park costs more than QIDI's.** Those 20 `M104 T0 S168.3` lines are an
+interpolated ramp issued about 107 lines *ahead* of the change, so QIDI's nozzle is back
+at temperature before the head is. A static `change_filament_gcode` cannot schedule
+anything ahead of itself, so ours pays the whole 150 → 200 climb as dead time at the park,
+blocking on `M109`. Orca's `ooze_prevention` post-processor is the only mechanism that can
+backtrace a preheat, and it costs a second blocking `M109` — which is why it is off.
 
 **Two deliberate deviations from the reference**, both recorded in `TODO.md`:
 

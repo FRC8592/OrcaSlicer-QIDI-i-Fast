@@ -620,11 +620,21 @@ Standing facts that came out of it:
   in two materials, so its head never travels between separate parts. Ours does, and every
   tool change is also an object change. When the reference's scheme is not enough, check
   whether this is why before blaming the block.
-- **A standby drop needs a blocking wait to be safe, and a static block cannot preheat
-  ahead.** QIDI parks only T0 (27×) and never T1 — because only T0's return blocks on
-  `M109`. Copy that asymmetry; a symmetric drop plus a non-blocking `M104` means printing
-  under temperature. `ooze_prevention`'s post-processor is the only thing that can
-  backtrace a preheat, and it costs a second blocking `M109`.
+- **QIDI parks the *idle* nozzle, not the first one — and a static block cannot preheat
+  ahead.** Measured in `dual-extruder.gcode`: T0 makes 1549 extruding moves (21.5 %,
+  median segment 56 moves), T1 makes 5655 (78.5 %, median 210). T1 does four-fifths of the
+  printing, so QIDI parks T0 at 150 °C 27 times and never parks T1. That is a duty-cycle
+  decision — Cura's standby-temperature threshold — **not** a rule about tool index.
+  (An earlier note here had the causality backwards: it claimed T0 is parked *because*
+  only T0's return blocks on `M109`. The blocking `M109` is a consequence of parking T0,
+  not the reason for it.)
+  Two things follow. A job with symmetric duty — two objects, one per head — gets no
+  guidance from the reference's asymmetry; applying QIDI's actual logic says park both or
+  park neither. And QIDI's park is nearly free because it ramps back *ahead* of the change
+  (20× `M104 T0 S168.3`, issued ~107 lines early); a static `change_filament_gcode` cannot
+  schedule anything ahead of itself, so ours pays the whole climb as dead time at the park.
+  `ooze_prevention`'s post-processor is the only thing that can backtrace a preheat, and it
+  costs a second blocking `M109`.
 - **The two heads are not aligned in XY**, visible as a non-concentric band in the
   control print. Pre-existing, firmware-side, and **not** a reason to touch
   `extruder_offset` — hard rule 5 still holds.
