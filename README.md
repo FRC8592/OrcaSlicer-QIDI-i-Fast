@@ -362,7 +362,6 @@ G92 E0
 {if next_extruder == 0}M109 S{new_filament_temp}{else}M104 S{new_filament_temp}{endif}
 G1 F1200 E8.5
 G92 E0
-G0 X165 Y5 F6000
 ```
 
 Expanded, switching **to T0** and **to T1** respectively:
@@ -378,8 +377,9 @@ G92 E0                      G92 E0
 M109 S200   ; blocks        M104 S200        ; does not block
 G1 F1200 E8.5               G1 F1200 E8.5    ; purge, clear of the parts
 G92 E0                      G92 E0
-G0 X165 Y5 F6000            G0 X165 Y5 F6000 ; stage before Orca's travel
 ```
+
+Orca's own travel to the next print point follows, from the park.
 
 | Line | Source |
 |---|---|
@@ -388,7 +388,39 @@ G0 X165 Y5 F6000            G0 X165 Y5 F6000 ; stage before Orca's travel
 | `M109` only when switching **to** T0, `M104` otherwise | Reference §7: switching to T0 blocks on `M109 S200`; switching to T1 does not |
 | the bracketing `G92 E0` | Ours, and load-bearing. Under absolute E `G1 E-8.5` means *move E to −8.5*, not *retract 8.5*; zeroing first makes the number mean what it reads as. The trailing one restores the `E = 0` invariant Orca expects after a tool change, so its own travel retract and prime still balance |
 | `M104 S150 T0`, only when leaving T0 | Reference §7: the dual file parks T0 at 150 °C 27 times and **never parks T1**. Reproduced literally. See [Why only T0](#why-only-t0-is-parked) — the reason is duty cycle, not tool index, and it does not transfer cleanly to a symmetric job. Added 2026-09-20, explanation corrected 2026-09-26 |
-| the `Y5` park lane and the `X165 Y5` staging move | The lane our own start block already primes in (`G1 X330 Y5 F3600` / `G1 X5 A19 F2400`) — known clear, known reachable by both nozzles. `X165` is bed centre, as in the reference's `X165 Y89.6` staging point. Added 2026-09-20 |
+| the `Y5` park lane | The lane our own start block already primes in (`G1 X330 Y5 F3600` / `G1 X5 A19 F2400`) — known clear, known reachable by both nozzles. Added 2026-09-20. A matching `G0 X165 Y5` staging move was added with it and **removed again on 2026-09-27** — see [Why there is no staged return](#why-there-is-no-staged-return) |
+
+##### Why there is no staged return
+
+The reference ends its tool change by staging through `X165 Y89.6` before approaching the
+part, and this profile copied that shape on 2026-09-20 with `G0 X165 Y5`. **It made things
+worse and was removed on 2026-09-27.**
+
+Orca's own travel after the block runs straight from wherever the block leaves the head to
+the next print point, at layer height, with `z_hop = 0`. A staging point at the front of
+the plate therefore drags the nozzle across anything nearer the front than the destination.
+Counted over two real two-cube files, transit crossings — a part crossed on the way to
+somewhere else, not approached as a destination:
+
+| tool-change block | front cube | back cube |
+|---|---:|---:|
+| park in X only, no staging | 1 | 0 |
+| park at `Y5`, staged via `X165 Y5` | **51** | 0 |
+| park at `Y5`, no staging *(current)* | 0 | 0 |
+
+The print that produced the middle row matches it exactly: the back cube, crossed zero
+times, came out complete and clean — the first cube either head had finished. The front
+cube, crossed 51 times, spaghettied.
+
+The reference gets away with staging because it prints **one object**. Nothing is ever
+between its staging point and its destination, so the move costs it nothing. On a plate
+with two objects it is the difference between a part and a bird's nest.
+
+**The current arrangement is layout-dependent**, and that is the honest limitation: parking
+at `Y5` and travelling straight to the destination measures zero crossings for a
+front/back two-object plate, but a different arrangement could put an object on the direct
+path. The layout-independent answer is a travel Z-hop — which the reference has no need of,
+because it never makes a 300 mm return from a bed-edge park. Recorded in `TODO.md`.
 
 ##### Why only T0 is parked
 

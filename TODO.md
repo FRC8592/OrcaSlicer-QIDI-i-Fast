@@ -1149,6 +1149,42 @@ T1 (front) cube came off the bed at about half height, and both cubes were strun
       before printing; the exported file now shows 0 duplicate `T` lines. **Not verified
       that the indent actually breaks the check** — it was fixed rather than tested.
 
+#### Third dual print (2026-09-27): first finished cube, and a regression I introduced
+
+**Head 1's cube printed complete and clean** — the first time either head has finished a
+part. Head 2's spaghettied. The cause was the `G0 X165 Y5` staging move added on
+2026-09-20, and it is measurable rather than inferred.
+
+- [x] **The staged return dragged the nozzle across the front cube 51 times.** Orca's
+      travel after `change_filament_gcode` runs straight from wherever the block leaves
+      the head to the next print point, at layer height, `z_hop = 0`. A staging point at
+      the front of the plate is *behind* nothing and *in front of* everything, so every
+      return to the back cube crossed the front one. Transit crossings — a part crossed on
+      the way elsewhere, not approached as its destination — counted over the real files:
+
+      | block | front cube | back cube |
+      |---|---:|---:|
+      | park in X only (2026-09-12 print) | 1 | 0 |
+      | park `Y5` + stage `X165 Y5` (2026-09-26 print) | **51** | 0 |
+      | park `Y5`, no staging (current) | 0 | 0 |
+
+      The print matches the table exactly: back cube crossed zero times and complete,
+      front cube crossed 51 times and destroyed. **The staging move is removed.** The
+      `Y5` park stays — it is what got the back cube finished.
+      The reference stages through `X165 Y89.6` and is unharmed because it prints **one
+      object**; nothing is ever between its staging point and its destination. Copying the
+      move onto a two-object plate inverted its purpose. Recorded in `CLAUDE.md` as a
+      standing rule.
+- [ ] **`TODO(verify):` the current return is layout-dependent.** Park at `Y5` then travel
+      straight to the destination measures 0 transit crossings for a front/back two-object
+      plate, but an object sitting on the direct path between a bed-edge park and the
+      destination would still be crossed, at layer height, with no hop. The
+      layout-independent answer is a travel Z-hop, or `reduce_crossing_wall` — neither
+      derivable from the reference, which never makes this travel. **Fork material**; see
+      *Planned: an optimised fork* above. Until then: keep objects off the diagonal
+      between the bed edges at `Y5` and the rest of the plate, or print one object per
+      head near the centre.
+
 #### The two heads are not aligned in XY — and it is not ours
 
 - [ ] **The nozzle offset needs calibrating on the machine.** In the control print's

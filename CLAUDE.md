@@ -609,13 +609,19 @@ Standing facts that came out of it:
   blocking `M109`, the purge — executes on top of the part. Measured at 100 of 100 tool
   changes in the failing file. This is why the tool-change block now parks; see the
   bed-edge bullet under "Ground truth" above.
-- **Parking is not enough on its own — the *return* has to be staged too.** The second
-  dual print (2026-09-20) parked and purged correctly and still failed. Orca's travel
-  after the block goes straight from wherever the block left the head to the next print
-  point, so a park at the bed edge turns into a diagonal that lays the purge's trailing
-  string across the part. The reference stages through `X165 Y89.6` for exactly this
-  reason. Ours stages through `X165 Y5` — our own start block's prime lane, since `Y89.6`
-  is Cura's arithmetic on one object.
+- **Do not stage the return through a point that has an object between it and the
+  destination.** Orca's travel after the block runs straight from wherever the block left
+  the head to the next print point, at layer height, with `z_hop = 0`. A staging point in
+  front of the plate therefore drags the nozzle across anything nearer the front than the
+  destination. Measured over two real files: parking in X only gave **1** transit crossing
+  of the front cube; adding a `X165 Y5` staging move gave **51**, and the front cube
+  spaghettied while the back cube — crossed zero times — printed complete and clean.
+  The reference stages through `X165 Y89.6` and gets away with it only because it prints
+  **one** object; nothing is ever between its staging point and its destination.
+  The block now parks at `Y5` and lets Orca travel straight to the destination, which
+  measures 0 crossings for a front/back two-object plate. **That is layout-dependent** —
+  the general fix is a travel Z-hop, which the reference has no need of because it never
+  makes this travel.
 - **Two objects is not the same job as two materials.** The reference prints *one* object
   in two materials, so its head never travels between separate parts. Ours does, and every
   tool change is also an object change. When the reference's scheme is not enough, check
