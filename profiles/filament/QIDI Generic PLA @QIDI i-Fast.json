@@ -16,40 +16,40 @@
 		"150"
 	],
 	"cool_plate_temp": [
-		"80"
+		"60"
 	],
 	"cool_plate_temp_initial_layer": [
-		"80"
+		"60"
 	],
 	"textured_cool_plate_temp": [
-		"80"
+		"60"
 	],
 	"textured_cool_plate_temp_initial_layer": [
-		"80"
+		"60"
 	],
 	"eng_plate_temp": [
-		"80"
+		"60"
 	],
 	"eng_plate_temp_initial_layer": [
-		"80"
+		"60"
 	],
 	"hot_plate_temp": [
-		"80"
+		"60"
 	],
 	"hot_plate_temp_initial_layer": [
-		"80"
+		"60"
 	],
 	"textured_plate_temp": [
-		"80"
+		"60"
 	],
 	"textured_plate_temp_initial_layer": [
-		"80"
+		"60"
 	],
 	"supertack_plate_temp": [
-		"80"
+		"60"
 	],
 	"supertack_plate_temp_initial_layer": [
-		"80"
+		"60"
 	],
 	"enable_pressure_advance": [
 		"0"

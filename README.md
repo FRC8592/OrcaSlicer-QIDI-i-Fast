@@ -523,11 +523,27 @@ Both were invisible until the process profiles were slice-tested through a flatt
 chain, because the CLI never resolved `inherits` and so never saw the inherited values.
 The GUI does resolve it, so both would have bitten on first use.
 
-**Bed temperature is 80 °C**, from `M140 S80` / `M190 S80` in both references. This
-contradicts `PrusaSlicer_fast.ini`, which says 60 °C; the G-code is ground truth. The value
-itself is a *filament* property in Orca (`hot_plate_temp`), so it lives in the filament
-profile, not here — see [Filament profile](#filament-profile). Both references emit the
-same 80 °C with PLA alone and with PLA + PETG, so it is not a material-specific number.
+**Bed temperature is 60 °C** as of 2026-10-01 — it was 80, and the reversal is worth
+reading in full.
+
+The two original exports ask for `M140 S80` / `M190 S80`, which contradicted
+`PrusaSlicer_fast.ini`'s 60 °C. The project resolved that in favour of the G-code, reasoning
+that both references emitted 80 with PLA alone and with PLA + PETG, so it was not a
+material-specific number.
+
+**The three two-cube exports added on 2026-10-01 ask for 60** — PLA in both slots, the same
+plate, the same job this profile is built for — agreeing with the ini. And
+`qp_2cube-mult.gcode` printed successfully on the machine where our 80 °C version of the
+same plate failed. 80 °C is also above PLA's glass transition, so the first layers never
+fully set and stay rubbery for the whole print, which is a textbook cause of a tall part
+releasing from a textured plate.
+
+What remains unexplained: `single-extruder.gcode` is PLA-only and asks for 80. Something
+differed between the exports — most likely a different filament preset in QIDI Print — and
+the files do not say which. Recorded in `TODO.md`.
+
+The value is a *filament* property in Orca (`hot_plate_temp`), so it lives in the filament
+profile, not here — see [Filament profile](#filament-profile).
 
 ## Process profiles
 
@@ -563,6 +579,8 @@ independently corroborated by `PrusaSlicer_fast.ini`: `initial_layer_line_width`
 | `default_acceleration` | `0` | Reference G-code: no `M204` anywhere. `0` disables every per-feature acceleration command (`v2.4.2:GCode.cpp:4764`, `:6415`, `:7383`); the base's `500` emitted `M204 S500` |
 | `default_jerk` | `0` | Reference G-code: no `M205` anywhere. `0` disables every jerk command (`:4768`, `:6442`, `:7398`); the base's `8` emitted `M205 X8 Y8`. (Cura carries `acceleration_print 500` / `jerk_print 8` too — the same numbers — but with emission off) |
 | `ooze_prevention` | `0` | Turned **off** 2026-09-20 after the first dual print — it layered a second, blocking `M109` on top of the tool-change block's own and stalled the print. See [Ooze prevention](#process-profiles) below. (It was `1`, from the reference's `M104 T0 S150`, 27×) |
+| `set_other_flow_ratios` | `1` | Orca's gate for the per-feature flow-ratio keys. With it `0` — the inherited value — `first_layer_flow_ratio` is accepted, written into the output's config block, and **silently ignored**. Verified against 2.4.2 by slicing with the gate both ways |
+| `first_layer_flow_ratio` | `1.147` | Measured, not chosen: QIDI's first layer deposits `0.0499` mm of filament per mm of path, ours deposited `0.0435` — 14.7 % less for the same nominal 0.42 × 0.3 line. See [The first layer was 15 % light](#the-first-layer-was-15-light) |
 | `skirt_type` | `perobject` | Reference G-code: QIDI's one-head-per-object export gives **each tool its own skirt** before it touches its own part — `T0 → SKIRT → walls`, then `T1 → SKIRT → walls` on layer 1. Orca's inherited `combined` draws a single skirt with whichever tool starts layer 1, which is always T0, leaving the second head's first bed contact to be its own wall. Added 2026-10-01; see [Each tool needs its own skirt](#each-tool-needs-its-own-skirt) |
 | `compatible_printers` | both printer names | Required by two different OrcaSlicer code paths |
 
@@ -609,7 +627,7 @@ per-material tuning belong after a first successful print, not here.
 |---|---|---|
 | `nozzle_temperature_initial_layer` | `200` | `M104 T0 S200` / `M109 T0 S200` in both references; `first_layer_temperature = 200` in `PrusaSlicer_fast.ini` |
 | `nozzle_temperature` | `200` | `temperature = 200` in `PrusaSlicer_fast.ini`; the single reference never leaves 200 °C (its one mid-print `M104 S200` re-asserts the same value) |
-| every `*_plate_temp` and `*_plate_temp_initial_layer` | `80` | `M140 S80` / `M190 S80` in both references |
+| every `*_plate_temp` and `*_plate_temp_initial_layer` | `60` | `M140 S60` / `M190 S60` in all three two-cube exports (2026-10-01). Was `80`, from the two original references; see [Bed temperature](#values-from-the-reference-g-code) for the reversal |
 | `enable_pressure_advance` | `0` | No `M900` in either reference, in `PrusaSlicer_fast.ini`, or in the Simplify3D `.fff` |
 | `idle_temperature` | `150` | `M104 T0 S150` in the dual reference, every time the PLA hotend is parked. **Inert since 2026-09-20**: it is read only while the process profile's `ooze_prevention` is on, and that is now `0`. Kept so re-enabling is a one-key change |
 | `compatible_printers` | both printer names | Same two code paths as the process profiles |
@@ -626,10 +644,11 @@ Everything else is inherited, including `filament_diameter` `1.75` (which matche
 profile declares `default_bed_type: "3"` (High Temp Plate), but that key is read *only by
 the GUI* (`v2.4.2:Plater.cpp:2524`–`2538`); the CLI's `curr_bed_type` falls back to Cool
 Plate (`PrintConfig.cpp:1080`+). Setting only `hot_plate_temp*` therefore slices at
-`M140 S45` from the CLI and 80 °C from the GUI. The i-Fast has one physical bed, so every
-variant — `cool_plate_temp`, `textured_cool_plate_temp`, `eng_plate_temp`,
-`hot_plate_temp`, `textured_plate_temp`, `supertack_plate_temp` and each
-`*_initial_layer` — is 80. Confirmed empirically: the slice emits `M140 S80` / `M190 S80`.
+`M140 S45` from the CLI and the intended temperature from the GUI. The i-Fast has one
+physical bed, so every variant — `cool_plate_temp`, `textured_cool_plate_temp`,
+`eng_plate_temp`, `hot_plate_temp`, `textured_plate_temp`, `supertack_plate_temp` and each
+`*_initial_layer` — carries the same number, **60** since 2026-10-01. Confirmed
+empirically: the slice emits `M140 S60` / `M190 S60`.
 
 **Pressure advance is off.** The parent `Qidi Generic PLA` ships
 `enable_pressure_advance: 1` with `pressure_advance: 0.031`, which on a `marlin` flavor
@@ -639,6 +658,31 @@ profiles — the 0.031 is an Orca vendor value with no i-Fast provenance, and th
 scope puts pressure advance out of scope until after a first print. `pressure_advance` itself is
 left inherited so the number survives for later tuning; it is simply unused. Recorded in
 `TODO.md`.
+
+**The first layer was 15 % light.** `first_layer_flow_ratio` is `1.147` and
+`set_other_flow_ratios` is `1`. The number comes from measuring both slicers' output on the
+same plate, after `reference/qp_2cube-mult.gcode` printed successfully where our version
+failed:
+
+| | cross-section of the first-layer extrudate |
+|---|---|
+| QIDI Print | `0.0499` mm E per mm of path → **0.1200 mm²** |
+| ours, before | `0.0435` → **0.1046 mm²** |
+
+Both slicers were asked for the same line. They disagree on what that means. Cura computes
+a plain rectangle — `0.4 × 0.3 = 0.1200` — while Orca uses a rounded-end model and then
+applies the inherited `filament_flow_ratio` of `0.98`:
+`(0.3 × (0.42 − 0.3) + π(0.15)²) × 0.98 = 0.1046`. Same nominal dimensions, 15 % less
+plastic on the plate, and a first layer the machine owner described as "slightly more
+glossy and thin".
+
+With both keys set, every first-layer feature matches the reference: outer wall `0.0499`
+against `0.0499`, inner wall the same, bottom surface `0.0501`. **The skirt does not** —
+it stays at `0.0435`, because Orca excludes it from `first_layer_flow_ratio`. That is
+acceptable: the skirt's job here is to settle pressure and wipe the nozzle, not to adhere.
+
+`set_other_flow_ratios` is the part worth remembering. Without it the flow key is accepted
+by the preset loader, appears in the exported config block as `1.147`, and changes nothing.
 
 **Each tool needs its own skirt.** `skirt_type` is `perobject`, not the inherited
 `combined`, and the source is QIDI's own one-head-per-object export
@@ -761,7 +805,7 @@ This only affects command-line slicing. **Nothing about normal GUI use requires 
   It falls back to `btPEI` regardless, so this is explicitness rather than a change.
   **Caveat:** `default_bed_type` is read only by the GUI; the CLI's `curr_bed_type`
   defaults to Cool Plate. The filament profile therefore has to set *every* plate-temp
-  variant to 80 °C or GUI and CLI slices will disagree — see `TODO.md`.
+  variant to 60 °C or GUI and CLI slices will disagree — see `TODO.md`.
 - **`support_air_filtration: "0"`** — otherwise `M106 P3 S255` is injected after the start
   block and `M106 P3 S0` after `;End of Gcode`. See
   [the section above](#support_air_filtration-0--a-machine-key-the-filament-profile-forced-out).
@@ -1047,10 +1091,10 @@ profile and show every change of the review from the GUI side (see
 3. **Which fan spins up as layer 1 starts?** That is `M106 T-2 S255`, reproduced from the
    reference without knowing its target. Chamber circulation, exhaust or a side blower —
    note which. It decides whether the command matters for part cooling.
-4. **First-layer squish at 0.3 mm and bed at 80 °C.** Both are the reference's numbers
-   and both are on the high side for PLA. If the first layer shows elephant's foot, drop
-   the bed to 60 °C (QIDI's ini value) in the filament preset before touching anything
-   else.
+4. **First-layer squish at 0.3 mm and bed at 60 °C.** The bed was 80 until 2026-10-01;
+   see [Bed temperature](#values-from-the-reference-g-code) for why it moved. If the first
+   layer will not stick at 60, the older exports' 80 is the documented alternative — but
+   check the squish first, since `first_layer_flow_ratio` now matches QIDI's deposition.
 5. **Motion.** Travel at 100 mm/s, retract 1.5 mm at 30 mm/s, no Z-hop, firmware-stored
    acceleration — all QIDI Print's numbers. Stringing, if any, is then a material
    question, not a profile one.

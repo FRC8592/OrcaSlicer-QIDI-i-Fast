@@ -336,8 +336,14 @@ The i-Fast files are:
 - `ideaMaker/i-fast-export.printer`, `i-fast-PLA-export.bin`
 - `CURA/qidi.zip`
 
-Note a conflict, **resolved in favour of the G-code**: this ini says bed 60 °C, but the
-reference emits `M140 S80`. Use 80 °C and record the discrepancy in `README.md`.
+Note a conflict. The ini says bed 60 °C and the two original references emit `M140 S80`;
+the project used 80 until 2026-10-01, when the **three two-cube exports — PLA only, same
+plate — all turned out to emit `M140 S60`**, agreeing with the ini, and QIDI's own
+`qp_2cube-mult.gcode` printed successfully where our 80 °C version of the same plate
+failed. **The profile now ships 60.** 80 °C is above PLA's glass transition, so the first
+layers never set. Unexplained: `single-extruder.gcode` is PLA-only and asks for 80 —
+something differed between the exports and the files do not say what. See `README.md`
+§"Bed temperature" and `TODO.md`.
 
 ### Bed temperature and the mixed-material reference
 

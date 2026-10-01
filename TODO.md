@@ -1245,6 +1245,53 @@ part. Head 2's spaghettied. The cause was the `G0 X165 Y5` staging move added on
       0 / −1.50, with no accumulation over 101 changes. QIDI's own balance is the same
       10.0 out / 10.0 back (§10.2).
 
+#### Found by the QIDI Print two-cube comparison (2026-10-01)
+
+`reference/qp_2cube-mult.gcode` — QIDI Print, one head per object — **printed successfully
+on the machine, while our slice of the same plate failed.** Same arrangement, same cubes,
+same plate, same day. That closes the question of whether the machine can do per-object
+dual printing: it can, and the difference is in our G-code. Two measured differences came
+out of the comparison, both on the first layer, both now changed.
+
+- [x] **Our first layer deposited 14.7 % less material.** Measured as filament per mm of
+      path over layer 1: QIDI `0.0499`, ours `0.0435`, uniform across every feature type.
+      The slicers disagree on what the same nominal line means — Cura computes a plain
+      rectangle `0.4 × 0.3 = 0.1200 mm²`, Orca a rounded-end section times the inherited
+      `filament_flow_ratio 0.98`: `(0.3 × (0.42 − 0.3) + π(0.15)²) × 0.98 = 0.1046 mm²`.
+      It matches the machine owner's description of the underside — "slightly more glossy
+      and thin".
+      **Fixed**: `first_layer_flow_ratio: "1.147"` — the measured ratio, not a chosen one.
+      Outer wall, inner wall and bottom surface now land on `0.0499`/`0.0499`/`0.0501`
+      against the reference's `0.0499`.
+- [x] **`set_other_flow_ratios` is a silent gate, and it was off.** With the inherited
+      `"0"`, `first_layer_flow_ratio` is accepted by the preset loader, written into the
+      exported config block as `1.147`, and **ignored** — the measured deposition did not
+      move. Set to `"1"`. Verified by slicing with the gate both ways. Worth remembering
+      for any other per-feature flow key.
+- [ ] **`TODO(verify):` the skirt is excluded from `first_layer_flow_ratio`.** Every other
+      first-layer feature now matches the reference; the skirt stays at `0.0435` against
+      QIDI's `0.0499`. Judged acceptable — the skirt's job here is to settle pressure and
+      wipe the nozzle, not to adhere — but it is a difference from ground truth and is not
+      currently compensated.
+- [x] **Bed temperature 80 → 60.** All three two-cube exports emit `M140 S60` / `M190 S60`,
+      agreeing with QIDI's `PrusaSlicer_fast.ini`, where the two original references emit
+      80 and this profile followed them. 80 °C is above PLA's glass transition, so the
+      first layers never set — a textbook cause of a tall part releasing from a textured
+      plate, which is what has been happening. All twelve plate-temp keys changed.
+      Registered in `scripts/accepted.py` as `bed-temperature-60-vs-80`, because the
+      harness diffs against `single-extruder.gcode`, which is an 80 °C export.
+- [ ] **`TODO(verify):` why do the two original exports ask for 80?**
+      `single-extruder.gcode` is PLA-only and emits `M140 S80`; `qp_2cube-mult.gcode` is
+      PLA-only and emits `M140 S60`. Something differed between them — most likely a
+      different filament preset selected in QIDI Print — and neither file records which.
+      Until that is known, 60 is the better-evidenced number but not a settled one. If a
+      print will not stick at 60, 80 is the documented alternative.
+- [ ] **Both changes landed together, so a successful reprint will not attribute itself.**
+      User decision 2026-10-01: both are measured against the reference that works, so
+      neither is a guess worth isolating. If the next print succeeds and someone later
+      needs to know which mattered, the bed temperature can be tested alone by overriding
+      it on the machine without re-slicing.
+
 #### The two heads are not aligned in XY — and it is not ours
 
 - [ ] **The nozzle offset needs calibrating on the machine.** In the control print's

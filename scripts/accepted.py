@@ -80,6 +80,19 @@ RULES = [
      "Fan speed is a filament/process property OrcaSlicer owns; the reference's "
      "per-extruder Cura fan curve is out of scope for a single-PLA profile.",
      "TODO.md 'Accepted diffs', extracted-gcode.md §7 'Fan speeds'"),
+    ("bed-temperature-60-vs-80", ("temperature", "census", "start_block"), (), None,
+     r"^M1(40|90) S(60|80)$",
+     "Bed temperature. The two original exports ask for 80 C and this profile shipped "
+     "that; the three 2026-10-01 two-cube exports -- PLA in both slots, same plate, the "
+     "job this profile is being built for -- ask for 60, agreeing with QIDI's own "
+     "PrusaSlicer_fast.ini. Changed to 60 on 2026-10-01 after qp_2cube-mult.gcode printed "
+     "successfully where our 80 C version failed; 80 is also above PLA's glass transition, "
+     "so the first layers never set. The harness diffs against single-extruder.gcode, "
+     "which is one of the 80 C exports, so this difference is expected and permanent "
+     "until that file is re-exported.",
+     "TODO.md 'Found by the QIDI Print two-cube comparison', "
+     "reference/extracted-gcode.md section 10"),
+
     # ---- value-only differences that track the fixture, not the profile -------
     ("t1-heating-temperature", ("start_block", "temperature"), (), None,
      r"^;?M10[49] T1 S\d+(\.\d+)?$",
