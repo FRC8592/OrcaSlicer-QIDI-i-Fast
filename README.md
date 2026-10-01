@@ -563,6 +563,7 @@ independently corroborated by `PrusaSlicer_fast.ini`: `initial_layer_line_width`
 | `default_acceleration` | `0` | Reference G-code: no `M204` anywhere. `0` disables every per-feature acceleration command (`v2.4.2:GCode.cpp:4764`, `:6415`, `:7383`); the base's `500` emitted `M204 S500` |
 | `default_jerk` | `0` | Reference G-code: no `M205` anywhere. `0` disables every jerk command (`:4768`, `:6442`, `:7398`); the base's `8` emitted `M205 X8 Y8`. (Cura carries `acceleration_print 500` / `jerk_print 8` too — the same numbers — but with emission off) |
 | `ooze_prevention` | `0` | Turned **off** 2026-09-20 after the first dual print — it layered a second, blocking `M109` on top of the tool-change block's own and stalled the print. See [Ooze prevention](#process-profiles) below. (It was `1`, from the reference's `M104 T0 S150`, 27×) |
+| `skirt_type` | `perobject` | Reference G-code: QIDI's one-head-per-object export gives **each tool its own skirt** before it touches its own part — `T0 → SKIRT → walls`, then `T1 → SKIRT → walls` on layer 1. Orca's inherited `combined` draws a single skirt with whichever tool starts layer 1, which is always T0, leaving the second head's first bed contact to be its own wall. Added 2026-10-01; see [Each tool needs its own skirt](#each-tool-needs-its-own-skirt) |
 | `compatible_printers` | both printer names | Required by two different OrcaSlicer code paths |
 
 **First layer 0.3 mm, on all five.** The stock profiles each set this equal to their own
@@ -638,6 +639,31 @@ profiles — the 0.031 is an Orca vendor value with no i-Fast provenance, and th
 scope puts pressure advance out of scope until after a first print. `pressure_advance` itself is
 left inherited so the number survives for later tuning; it is simply unused. Recorded in
 `TODO.md`.
+
+**Each tool needs its own skirt.** `skirt_type` is `perobject`, not the inherited
+`combined`, and the source is QIDI's own one-head-per-object export
+(`reference/qp_2cube-mult.gcode`, extraction §10.2). Its layer 1 reads:
+
+```
+T0 → ;TYPE:SKIRT → WALL-INNER → WALL-OUTER → SKIN     (T0's cube)
+T1 → ;TYPE:SKIRT → WALL-INNER → WALL-OUTER → SKIN     (T1's cube)
+```
+
+Each tool lays a complete skirt — 272 and 293 moves, layer 1 only, nested 0.8 mm apart —
+before touching its own part, and the filament the two tools dispense comes out balanced to
+within 1 mm (1.57022 m against 1.57120 m).
+
+`combined`, which the base profile inherits, draws **one** skirt with whichever tool is
+active when layer 1 begins — always T0, because the start block leaves T0 selected. In a
+two-object dual print that gave T0 43.83 mm of pressure-settling, nozzle-wiping skirt and
+gave the second head none: its first contact with the plate was its own inner wall,
+straight off an 8.5 mm purge at the park and a long retracted travel. It was the entire
+difference in filament dispensed between our two cubes (T0 1296.15 mm, T1 1254.32 mm) and
+the only first-layer asymmetry left between them, in four consecutive prints where the
+second head's object was the one that failed. `TODO.md` has the history.
+
+`perobject` is Orca's serialized value for the GUI's "Per object"; the enum is
+`combined` / `perobject`, verified against 2.4.2 by slicing both.
 
 **Ooze prevention, and what it does to a multi-material job.** With `ooze_prevention`
 on, OrcaSlicer parks the *outgoing* hotend before each tool change with a non-blocking

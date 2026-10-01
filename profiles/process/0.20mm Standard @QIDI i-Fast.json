@@ -12,6 +12,7 @@
 	"default_acceleration": "0",
 	"default_jerk": "0",
 	"ooze_prevention": "0",
+	"skirt_type": "perobject",
 	"compatible_printers": [
 		"QIDI i-Fast 0.4 nozzle",
 		"Qidi X-Max 0.4 nozzle"

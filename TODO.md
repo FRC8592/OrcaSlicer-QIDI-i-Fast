@@ -1215,8 +1215,14 @@ part. Head 2's spaghettied. The cause was the `G0 X165 Y5` staging move added on
       (1.57022 m / 1.57120 m) where ours differs by the 43.83 mm of skirt T0 alone gets.
       Extraction §10.2. **This is now the leading candidate for the T1 failures**, and
       unlike the earlier guesses it is a difference from ground truth rather than a theory.
-      Candidate fix: `skirt_type` per object, or whatever Orca 2.4.2 offers that gives each
-      tool its own layer-1 priming loop. Not yet applied.
+      **Applied 2026-10-01: `skirt_type: "perobject"` on all five process profiles.**
+      The enum is `combined` / `perobject` (`perobject` is the serialized form of the GUI's
+      "Per object"), verified against 2.4.2 by slicing both. Single-extruder harness case
+      unchanged — 10 accepted, 6 known, 0 unexpected. **Whether it actually gives the
+      second head its own skirt cannot be checked here**: the 2.4.2 CLI segfaults on any
+      two-filament slice, so it needs a GUI slice. What to look for in the export: two
+      `;TYPE:Skirt` sections on layer 1, one after each tool selection, and the two tools'
+      net filament within a millimetre or two of each other instead of ~44 mm apart.
 - [ ] **`TODO(verify):` the original statement of the above —**
       Measured on the failing file: filament per feature is identical between the two cubes
       to the milligram — sparse infill 456.96 mm each, inner wall 288.97, outer wall
