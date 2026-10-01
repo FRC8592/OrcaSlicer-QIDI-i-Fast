@@ -363,10 +363,12 @@ is what keeps it honest. A profile aimed at *printing well* rather than at *matc
 reference* is a different goal and cannot share that rule — so it is a fork, not a change
 to these files.
 
-No intent has been written for it yet, deliberately: `CLAUDE.md` says not to write one for
-work nobody has picked up. **Write `intent/0005` when the work starts**, in the
-originator's own words, and the questions below become its starting material rather than
-a checklist to inherit.
+Two **draft** intents now exist, written 2026-10-01 at the originator's request:
+[`intent/0005`](intent/0005-an-optimised-fork.md) for the fork itself and
+[`intent/0006`](intent/0006-a-prime-tower-for-the-fork.md) for the prime tower. Both carry
+a header saying they were assembled from session findings rather than written fresh —
+**rewrite their Problem and Proposed outcome before starting.** The list below is their
+raw material, not a checklist to inherit.
 
 Candidates this project has already surfaced and deliberately not acted on, each with the
 evidence that raised it:
@@ -374,10 +376,13 @@ evidence that raised it:
 - **Symmetric standby, or none at all.** The reference's park-T0-only is a duty-cycle
   decision on a 78/22 job and is arbitrary on a symmetric plate — see the `TODO(verify)`
   under *Found by the first dual print*.
-- **Prime tower.** Needs `use_relative_e_distances = 1`; 2.4.2 refuses the slice otherwise
-  (exit `-51`, reproduced by task 6). Absolute E is a fidelity constraint, not a technical
-  one, so a fork can simply drop it — at the cost of re-validating the tool-change block,
-  which reroutes through `WipeTowerIntegration::append_tcr`.
+- **Prime tower** — [`intent/0006`](intent/0006-a-prime-tower-for-the-fork.md). Needs
+  `use_relative_e_distances = 1`; 2.4.2 refuses the slice otherwise (exit `-51`, reproduced
+  by task 6). Absolute E is a fidelity constraint, not a technical one, so a fork can
+  simply drop it — at the cost of re-validating the tool-change block, which reroutes
+  through `WipeTowerIntegration::append_tcr`. **QIDI Print does it on this machine**: a
+  29.6 mm tower at `X150.2..179.8, Y90.0..119.6`, costing 126 min against the baseline's
+  81 — see `reference/extracted-gcode.md` §10.4.
 - **Z-hop on travel.** `z_hop = 0` comes from the reference, which never sweeps 330 mm to
   a park. 101 travels at layer height past a contracting part is the profile's own
   invention, and the hop is its natural counter.
@@ -1184,6 +1189,42 @@ part. Head 2's spaghettied. The cause was the `G0 X165 Y5` staging move added on
       *Planned: an optimised fork* above. Until then: keep objects off the diagonal
       between the bed edges at `Y5` and the rest of the plate, or print one object per
       head near the centre.
+
+#### Fourth dual print (2026-09-30): it follows the tool, not the position
+
+- [x] **The failure is T1's, proven by swapping the assignment.** Same plate, same
+      geometry, same block, cubes 185 mm apart with 0 transit crossings on either leg:
+      with left=T1 the left cube failed; with left=T0 and right=T1 the **right** cube
+      failed. Four dual prints, four failures, always T1's object. Not the bed, not the
+      position, not the slicer.
+      **This retires a claim made earlier in this file.** The control print was cited as
+      ruling out a per-nozzle fault; it does not. `dual-extruder.gcode` prints *one object*
+      in two materials, so T0's layers anchor the part however T1 is laying down — and the
+      2026-10-01 two-cube exports show the same thing (§10.1 of the extraction: 198 of 198
+      layer/cube combinations are printed by both tools). **No QIDI Print export has ever
+      given a whole object to one head.** Likewise `CUBE-head2.gcode`: T1 alone works, but
+      T1 is selected once and stays down.
+- [ ] **`TODO(verify):` T1 gets no skirt, and that is the only first-layer asymmetry left.**
+      Measured on the failing file: filament per feature is identical between the two cubes
+      to the milligram — sparse infill 456.96 mm each, inner wall 288.97, outer wall
+      265.20 — except `T0 Skirt 43.83`, which is the entire difference in net dispensed
+      filament (T0 1296.15 vs T1 1254.32). `skirt_type = combined` draws one skirt with
+      whichever tool is active at layer 1, and that is always T0. So T0 settles pressure
+      and wipes on 44 mm of skirt before touching its part; **T1's first bed contact is its
+      own inner wall**, straight off an 8.5 mm purge at the park and a long retracted
+      travel. That matches the reported first layer — "slightly more glossy and thin".
+      **QIDI gives each tool its own skirt** (§10.2) and uses it *instead of* a purge on the
+      first switch to a tool. Candidate fix: `skirt_type` per object. Not applied — it is a
+      guess at the mechanism, and the test below discriminates better.
+- [ ] **The discriminating test not yet run: two cubes, both assigned to head 2.** The
+      mirror of the 2026-09-20 control (two cubes both on head 1, no tool changes, both
+      stuck). Both stick → T1 is fine alone and the problem is T1 **plus** tool changes,
+      which is the lift seating and a machine matter. One or both fail → T1 has an
+      intrinsic fault unrelated to tool changing, and the profile is exonerated.
+- [x] **Extrusion bookkeeping is not the cause.** Per-tool retract/prime ledgers were
+      tracked across the whole file: T0 oscillates −10.00 / −3.50 at tool changes, T1
+      0 / −1.50, with no accumulation over 101 changes. QIDI's own balance is the same
+      10.0 out / 10.0 back (§10.2).
 
 #### The two heads are not aligned in XY — and it is not ours
 

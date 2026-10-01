@@ -35,7 +35,15 @@ Both files quote `sha1sum` values that must not change:
 ```
 352aca886b8d844fcebc2f49aee09f38978fb04c  reference/single-extruder.gcode
 0e2ab6397396dcab47bc8420ec173c9919030f91  reference/dual-extruder.gcode
+a747a6eb7ee406318a61483b1dd668ec5d4cfef4  reference/qp_2cube-mult.gcode
+160f42781ef48bcd1db86dcd71ab25d17003a87a  reference/qp_2cube-mult-o.gcode
+35498dda8a5b5dfb751f1e45275f281f3888d9f3  reference/qp_2cube-mult-pt.gcode
 ```
+
+Three further exports were added on 2026-10-01 — two cubes, one tool-change-heavy plate,
+in baseline / ooze-prevention / prime-tower variants. They are **LF, not CRLF**, and they
+are covered in [§10](#10-the-two-cube-exports-qp_2cube-multgcode-2026-10-01) rather than in
+the sections below, which describe the original pair.
 
 The line numbers below refer to the **raw** files, CRLF included. All excerpts are shown
 with the `\r` stripped for readability; nothing else has been altered.
@@ -575,3 +583,129 @@ Recorded so the next session does not re-derive them. Each of these was stated i
 | Base start G-code uses `[hot_plate_temp_initial_layer]` | It uses `[bed_temperature_initial_layer]`. §8 |
 | (not recorded) | The reference is absolute-E; the base profile is relative-E. §8 |
 | (not recorded) | The parked hotend is preheated ~107 lines *before* the tool change. §7 |
+
+## 10. The two-cube exports (`qp_2cube-mult*.gcode`, 2026-10-01)
+
+Three further QIDI Print exports, added to answer a question the original pair could not:
+**what does the factory slicer do with two separate objects and 101 tool changes?** All
+three print the same plate — two 20 mm XYZ calibration cubes, 100 layers, 0.2 mm, PLA in
+both slots — and differ only in one setting each.
+
+| file | setting | `;TIME:` | filament (T0 / T1) |
+|---|---|---:|---|
+| `qp_2cube-mult.gcode` | baseline | 4861 s — **81 min** | 1.30 m / 1.84 m |
+| `qp_2cube-mult-o.gcode` | ooze prevention **on** | 16409 s — **273 min** | 5.03 m / 9.18 m |
+| `qp_2cube-mult-pt.gcode` | prime tower **on** | 7602 s — **126 min** | — |
+
+Unlike `single-extruder.gcode` and `dual-extruder.gcode`, these three are **LF, not CRLF**.
+`.gitattributes` still marks `reference/**` as `-text -diff`, so they are stored byte-exact
+either way.
+
+### 10.1 They do not assign one object per head — and that matters
+
+The plate was set up with one head per cube, but QIDI Print's **per-feature** extruder
+settings override that. Counted across the baseline file:
+
+| | left cube | right cube |
+|---|---|---|
+| T0 | `WALL-OUTER` 1285 | `WALL-OUTER` 1288, `SKIN` 1396, `FILL` 1254 |
+| T1 | `WALL-INNER` 3461, `SKIN` 1335, `FILL` 1254 | `WALL-INNER` 3460 |
+
+Outer wall is **always** T0 and inner wall **always** T1, whichever cube. The per-object
+assignment survives only in who gets the infill and skin. The consequence is categorical:
+
+> **198 of 198 layer/cube combinations are printed by both tools.** No object in any of
+> these files is ever owned by a single head.
+
+That is the same condition as `dual-extruder.gcode` — one object, two materials — and it
+is *not* the condition under which this profile fails on the machine. Every cube here is
+anchored by T0's outer wall on every layer. A further export with the per-feature settings
+cleared is expected; until then these three say nothing about a T1-only object.
+
+### 10.2 Tool change — same shape as §7, with the coordinates now legible
+
+```gcode
+G1 F1800 E<current − 1.5>          ; ordinary wipe retract, at the part
+G0 F4000 X… Y…                     ; two or three staged hops away from the object
+G0 X330 Y104.805                   ; PARK — X330 before a T0, X0.00 before a T1
+G1 F1200 E<−8.5 more>              ; total retract 10.0 mm
+G92 E0
+M104 T1 S150                       ; standby drop for the tool being left
+T0
+G92 E0
+;M105
+M109 S200                          ; blocking, in BOTH directions
+M104 T1 S156.4                     ; interpolated ramp for the parked tool
+G1 F1200 E8.5                      ; purge, at the park
+G0 F4000 X165 Y104.805 Z0.5        ; stage at bed centre, Z restored here
+G0 X…                              ; approach
+;TYPE:WALL-OUTER
+G1 F1800 E10                       ; +1.5 — restores the wipe retract
+```
+
+- **Total retract is 10.0 mm**, not 8.5: a 1.5 mm wipe retract at the part, then 8.5 mm
+  more at the park. The purge returns 8.5 at the park and the remaining 1.5 at the first
+  wall. Perfectly balanced per tool. Our block plus Orca's own retract comes to the same
+  10.0 / 10.0.
+- **`Y104.805` is the park *and* the staging Y**, and §10.4 shows what it is.
+- **`M109 S200` blocks in both directions**, unlike `dual-extruder.gcode` where only the
+  switch to T0 blocks. See §10.3.
+- **The first switch to a tool has no purge at all.** Instead `;TYPE:SKIRT` follows
+  immediately and the skirt does the priming — and **each tool gets its own skirt**.
+  Ours gives the skirt to whichever tool is active at layer 1 (always T0), so T1's first
+  bed contact is its own wall. Recorded in `TODO.md`.
+
+### 10.3 Ooze prevention parks *both* nozzles — and costs 3.4× the wall clock
+
+| | `M109 S200` | `M104 T0 S150` | `M104 T1 S150` |
+|---|---:|---:|---:|
+| baseline | 13 | 6 | 5 |
+| `-o` | 99 | 49 | 99 |
+| `-pt` | 62 | 41 | 14 |
+
+**This settles the asymmetry question.** `dual-extruder.gcode` parks T0 and never T1, and
+§7 read that as a rule; it is not. It is Cura's standby-temperature threshold reacting to
+duty cycle — in that file T1 did 78.5 % of the printing. Give the two tools **equal** duty,
+as two cubes do, and QIDI parks **both**.
+
+The price is visible: 273 min against the baseline's 81, for identical geometry. Part of
+that is the standby waits, and part is that `-o` also adds an **ooze shield** — the walls
+span `X37.8..294.1, Y119.6..151.2` against the objects' `X43.2..288.7, Y125.0..145.8`, a
+skin roughly 5 mm outside the parts, redrawn every layer by both tools. That is where
+5.03 m + 9.18 m of filament goes, against the baseline's 1.30 m + 1.84 m.
+
+### 10.4 The prime tower, and what `Y104.805` is
+
+```
+prime tower   X 150.2..179.8   Y 90.0..119.6     ≈ 29.6 mm square
+              T0 WALL-OUTER 792 moves,  T1 WALL-INNER 1584 + SKIN 271
+park / stage lane                      Y 104.805
+```
+
+The tower is centred on **X165, Y105** — which is the `X165 Y104.805` staging point used by
+**all three files, including the two without a tower.** The staging lane is the prime-tower
+lane; QIDI routes every tool change through where the tower would be, and when the tower
+exists the head is already there.
+
+The tower costs 126 min against the baseline's 81 — expensive, but half what ooze
+prevention costs, and it is the only one of the three mechanisms that puts the purge
+somewhere useful.
+
+Note for the fork: this is a **Cura** prime tower in **absolute E**, which is no evidence
+either way about OrcaSlicer's own wipe tower refusing to slice without
+`use_relative_e_distances = 1` (§8, `TODO.md`). The constraint is Orca's, not the machine's.
+
+### 10.5 What these change for this profile
+
+- **The standby drop should be symmetric** for a symmetric job, with `M109` in both
+  directions. Ours parks only T0 and uses a non-blocking `M104` for T1 — a literal copy of
+  `dual-extruder.gcode` that these files show to be the wrong generalisation. Kept
+  deliberately for now; see `TODO.md`.
+- **Each tool wants its own skirt.** The only first-layer asymmetry left in our output.
+- **The park Y is object-relative**, about 20 mm in front of the objects — not a machine
+  constant, and not the `Y5` lane this profile uses. `Y5` was chosen because it is derivable
+  from our own start block; QIDI derives theirs from the plate.
+- **Nothing here supports a 300 mm sweep to a bed edge with no staging.** QIDI always hops
+  away from the object first, parks, then returns through bed centre. Our removal of the
+  staging move (2026-09-27) was forced by it crossing the other object — a problem QIDI
+  avoids by putting the lane in front of everything rather than at the plate's front edge.
