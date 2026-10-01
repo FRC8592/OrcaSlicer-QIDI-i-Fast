@@ -31,7 +31,7 @@ An OrcaSlicer printer profile (machine + process + minimal filament) for the
 - Legacy QIDI generation — Chitu board, Marlin-flavored G-code, **not** Klipper
 - Targets **OrcaSlicer 2.4.2**
 
-## Installation (Linux)
+## Installation (Linux and macOS)
 
 The seven JSON files under `profiles/` map one-to-one onto OrcaSlicer's user config
 directories. Installing is a copy — there is nothing to build and nothing to edit.
@@ -70,13 +70,15 @@ Which directory depends on how OrcaSlicer was installed:
 
 | Install | User profile directory |
 |---|---|
-| Flatpak `com.orcaslicer.OrcaSlicer` | `~/.var/app/com.orcaslicer.OrcaSlicer/config/OrcaSlicer/user/default/` |
-| AppImage / native | `~/.config/OrcaSlicer/user/default/` |
+| Flatpak `com.orcaslicer.OrcaSlicer` (Linux) | `~/.var/app/com.orcaslicer.OrcaSlicer/config/OrcaSlicer/user/default/` |
+| AppImage / native (Linux) | `~/.config/OrcaSlicer/user/default/` |
+| `OrcaSlicer.app` (macOS) | `~/Library/Application Support/OrcaSlicer/user/default/` |
 
 With OrcaSlicer closed:
 
 ```bash
 ORCA=~/.var/app/com.orcaslicer.OrcaSlicer/config/OrcaSlicer/user/default   # flatpak
+# ORCA=~/Library/Application\ Support/OrcaSlicer/user/default               # macOS
 mkdir -p "$ORCA"/{machine,process,filament}
 cp "profiles/machine/QIDI i-Fast 0.4 nozzle.json" "$ORCA/machine/"
 cp profiles/process/*.json  "$ORCA/process/"
@@ -109,9 +111,10 @@ If a preset does not appear at all, the log is the only place that says why:
 `~/.config/OrcaSlicer/log/` for an AppImage.
 
 This procedure is the one that produced the copy installed on the development machine;
-all seven installed files are byte-identical to `profiles/` (verified 2026-09-07).
+all seven installed files are byte-identical to `profiles/` — re-verified 2026-09-26 under
+`~/Library/Application Support/OrcaSlicer/user/default/`.
 
-### Two operational warnings
+### Four operational warnings
 
 - **Copy, never edit in place.** If a preset throws while loading, OrcaSlicer *deletes
   the file* (`v2.4.2:Preset.cpp:1641`–`1651`). This repo is the source of truth; the
@@ -119,6 +122,50 @@ all seven installed files are byte-identical to `profiles/` (verified 2026-09-07
 - **A missing or unparseable `version` key is a silent no-op** — the preset is skipped
   with no log line at all (`Preset.cpp:1653`–`1656`). If a hand-edited preset vanishes
   from the GUI, check `version` first.
+- **Copy with OrcaSlicer closed, and expect it to rewrite the file if you ever save from
+  the GUI.** A GUI save does not write back what this repo ships: it writes only the keys
+  that *differ from the inherited parent*, and adds its own. Measured on 2026-09-26, one
+  save turned the 62-key machine profile into 55 — it dropped the whole `machine_max_*`
+  block, `gcode_flavor`, `printer_variant`, `single_extruder_multi_material`,
+  `manual_filament_change`, `type` and `instantiation`, added 15 keys of its own, and
+  rewrote `version` from `02.04.00.06` to `2.4.0.6`. **Nothing there changes behaviour** —
+  every dropped key is identical to the value `inherits` supplies, which a slice confirmed
+  (`single_extruder_multi_material = 0`, `use_relative_e_distances = 0`,
+  `nozzle_diameter = 0.4,0.4`, motion limits unraised, zero `M20x`). But the byte-identity
+  claim above holds only until someone saves, and the explicit keys exist so that an audit
+  of `profiles/` against the flattened base turns up nothing undocumented. Re-copy from
+  `profiles/` afterwards.
+- **A `.3mf` project overrides the installed presets, and restarting does not clear it.**
+  A project embeds a full snapshot of the presets it was saved with, under the same preset
+  *names*, and OrcaSlicer honours the snapshot over the files on disk. On 2026-09-26 this
+  cost an afternoon: the correct block was on disk and the session log confirmed
+  `load config successful`, yet three consecutive slices — including one after
+  `File → New Project` — carried a superseded tool-change block, with no "modified" marker
+  on the preset to show it. See [Confirming a slice used the shipped
+  profile](#confirming-a-slice-used-the-shipped-profile).
+
+### Confirming a slice used the shipped profile
+
+Presets resolving in the GUI is not proof the *current* ones were used. Every exported
+G-code embeds its own `; CONFIG_BLOCK`, so check the file rather than the UI:
+
+```bash
+grep -m1 "^; change_filament_gcode = " out.gcode     # the block that actually ran
+grep -E "^; (single_extruder_multi_material|use_relative_e_distances|nozzle_diameter) = " out.gcode
+```
+
+For a two-extruder job the counts are the quickest signal that the tool-change block is
+the current one — on a two-object, 100-layer plate:
+
+```bash
+grep -cE '^G0 X(330|0) Y5 F6000' out.gcode   # parks, one per tool change
+grep -c  '^G0 X165 Y5 F6000'     out.gcode   # staged returns, same count
+grep -c  '^M104 S150 T0'         out.gcode   # standby drops, only the changes leaving T0
+```
+
+If those come back zero, the slice used a stale preset — a project snapshot, or an
+OrcaSlicer session started before the files were updated. Start a new project, re-select
+the three presets, and re-check before printing.
 
 ### Updating and uninstalling
 
@@ -240,10 +287,15 @@ are 0, and `retract_before_wipe` likewise.
 One of these is not idle. **`retract_length_toolchange` is what OrcaSlicer actually uses
 around a tool change** — `GCode::set_extruder` calls `retract(toolchange=true)`
 (`v2.4.2:GCode.cpp:7753`) → `GCodeWriter::retract_for_toolchange`
-(`GCodeWriter.cpp:1015`–`1024`), measured at exactly 2 mm in the GUI dual slice. The
-reference retracts 8.5 mm there. Raising it is a one-key change that would match ground
-truth, and it is left to the user because it changes what the hotend physically does;
-see `TODO.md`.
+(`GCodeWriter.cpp:1015`–`1024`), measured at exactly 2 mm in the GUI dual slice.
+
+**It is now `["0","0"]`, and that is deliberate** (2026-09-20, first dual print). Orca
+emits that retract *before* `change_filament_gcode` and the matching prime *after* the
+travel to the next print point — i.e. on the part. Reproducing the reference's
+park-and-purge means owning both ends of the pair, so the retract and the 8.5 mm purge
+both live in `change_filament_gcode` and this key is zeroed to keep Orca from adding a
+second, differently-placed pair. See
+[Park and purge](#park-and-purge--the-tool-change-block).
 
 #### Motion behaviour — from the reference exports
 
@@ -283,13 +335,151 @@ incremented it (`v2.4.2:GCode.cpp:4663`, `:4680`), so `1` is the second layer. T
 block lands after OrcaSlicer's own fan command for the layer and before its first move,
 one line later than in the reference; the firmware sees the same sequence.
 
+#### Park and purge — the tool-change block
+
+Rewritten on 2026-09-20 after the first dual print
+([`intent/0004`](intent/0004-make-the-dual-extruder-print-work.md)). The previous block
+was three lines — `T{next_extruder}` / `G92 E0` / `M109 S{new_filament_temp}` — and
+OrcaSlicer runs a custom tool-change block *wherever the previous extrusion ended*.
+Measured over the failing print: **100 of 100 tool changes stood inside an object
+footprint**, at print Z. The incoming nozzle arrived drooled and de-pressurised, both
+nozzles dwelt on the part through the blocking `M109`, and every post-change travel
+skimmed the layer at `z_hop = 0`. The print went spongey and then came off the plate.
+
+QIDI Print never does this. Its tool change (`dual-extruder.gcode` lines 1412–1429)
+parks at the bed edge, swaps there, and dumps 8.5 mm of purge before returning — 24
+parks at `X330` before a `T0`, 25 at `X0.00` before a `T1`, 49 staged returns through
+`X165 Y89.6`. The block now reproduces that:
+
+```gcode
+G92 E0
+G1 F1200 E-8.5
+G92 E0
+{if next_extruder == 1}M104 S150 T0
+{endif}G0 X{(next_extruder == 0) ? 330 : 0} Y5 F6000
+T{next_extruder}
+G92 E0
+{if next_extruder == 0}M109 S{new_filament_temp}{else}M104 S{new_filament_temp}{endif}
+G1 F1200 E8.5
+G92 E0
+```
+
+Expanded, switching **to T0** and **to T1** respectively:
+
+```gcode
+G92 E0                      G92 E0
+G1 F1200 E-8.5              G1 F1200 E-8.5
+G92 E0                      G92 E0
+                            M104 S150 T0     ; park the tool being left
+G0 X330 Y5 F6000            G0 X0 Y5 F6000   ; bed edge, in the prime lane
+T0                          T1
+G92 E0                      G92 E0
+M109 S200   ; blocks        M104 S200        ; does not block
+G1 F1200 E8.5               G1 F1200 E8.5    ; purge, clear of the parts
+G92 E0                      G92 E0
+```
+
+Orca's own travel to the next print point follows, from the park.
+
+| Line | Source |
+|---|---|
+| the 8.5 mm retract and the 8.5 mm purge | Reference §7: `G1 F1200 E<current − 8.5>` before the `T`, `G1 F1200 E8.5` after it. `F1200` is the reference's feedrate for both |
+| park at `X330` for T0, `X0` for T1 | Reference: the two park columns, counted above. Both are proven reachable by both nozzles — our own start block primes T1 from `X0` and T0 to `X5`, full width |
+| `M109` only when switching **to** T0, `M104` otherwise | Reference §7: switching to T0 blocks on `M109 S200`; switching to T1 does not |
+| the bracketing `G92 E0` | Ours, and load-bearing. Under absolute E `G1 E-8.5` means *move E to −8.5*, not *retract 8.5*; zeroing first makes the number mean what it reads as. The trailing one restores the `E = 0` invariant Orca expects after a tool change, so its own travel retract and prime still balance |
+| `M104 S150 T0`, only when leaving T0 | Reference §7: the dual file parks T0 at 150 °C 27 times and **never parks T1**. Reproduced literally. See [Why only T0](#why-only-t0-is-parked) — the reason is duty cycle, not tool index, and it does not transfer cleanly to a symmetric job. Added 2026-09-20, explanation corrected 2026-09-26 |
+| the `Y5` park lane | The lane our own start block already primes in (`G1 X330 Y5 F3600` / `G1 X5 A19 F2400`) — known clear, known reachable by both nozzles. Added 2026-09-20. A matching `G0 X165 Y5` staging move was added with it and **removed again on 2026-09-27** — see [Why there is no staged return](#why-there-is-no-staged-return) |
+
+##### Why there is no staged return
+
+The reference ends its tool change by staging through `X165 Y89.6` before approaching the
+part, and this profile copied that shape on 2026-09-20 with `G0 X165 Y5`. **It made things
+worse and was removed on 2026-09-27.**
+
+Orca's own travel after the block runs straight from wherever the block leaves the head to
+the next print point, at layer height, with `z_hop = 0`. A staging point at the front of
+the plate therefore drags the nozzle across anything nearer the front than the destination.
+Counted over two real two-cube files, transit crossings — a part crossed on the way to
+somewhere else, not approached as a destination:
+
+| tool-change block | front cube | back cube |
+|---|---:|---:|
+| park in X only, no staging | 1 | 0 |
+| park at `Y5`, staged via `X165 Y5` | **51** | 0 |
+| park at `Y5`, no staging *(current)* | 0 | 0 |
+
+The print that produced the middle row matches it exactly: the back cube, crossed zero
+times, came out complete and clean — the first cube either head had finished. The front
+cube, crossed 51 times, spaghettied.
+
+The reference gets away with staging because it prints **one object**. Nothing is ever
+between its staging point and its destination, so the move costs it nothing. On a plate
+with two objects it is the difference between a part and a bird's nest.
+
+**The current arrangement is layout-dependent**, and that is the honest limitation: parking
+at `Y5` and travelling straight to the destination measures zero crossings for a
+front/back two-object plate, but a different arrangement could put an object on the direct
+path. The layout-independent answer is a travel Z-hop — which the reference has no need of,
+because it never makes a 300 mm return from a bed-edge park. Recorded in `TODO.md`.
+
+##### Why only T0 is parked
+
+Because that is what QIDI's file does, and this profile reproduces it literally. The
+*reason* QIDI does it is duty cycle, measured in `dual-extruder.gcode`:
+
+| | extruding moves | share | median segment |
+|---|---:|---:|---:|
+| T0 | 1549 | 21.5 % | 56 moves |
+| T1 | 5655 | 78.5 % | 210 moves |
+
+T1 does four-fifths of the printing; T0 idles in long stretches. QIDI parks the idle
+nozzle — Cura's standby-temperature threshold — and leaves the busy one at temperature.
+Nothing about it is a rule concerning tool *index*.
+
+**So the asymmetry does not transfer to a symmetric job.** Two objects, one per head, is
+roughly 50/50 duty with equal idle stretches; QIDI's own logic applied to that plate says
+park both or park neither, not "park T0". What ships is the literal reference behaviour,
+which on such a plate means nozzle 1 pays a temperature wait at every change and nozzle 2
+never does, for no reason grounded in the print. That is a known, deliberate consequence
+of fidelity — see `TODO.md`.
+
+**And our park costs more than QIDI's.** Those 20 `M104 T0 S168.3` lines are an
+interpolated ramp issued about 107 lines *ahead* of the change, so QIDI's nozzle is back
+at temperature before the head is. A static `change_filament_gcode` cannot schedule
+anything ahead of itself, so ours pays the whole 150 → 200 climb as dead time at the park,
+blocking on `M109`. Orca's `ooze_prevention` post-processor is the only mechanism that can
+backtrace a preheat, and it costs a second blocking `M109` — which is why it is off.
+
+**Two deliberate deviations from the reference**, both recorded in `TODO.md`:
+
+- **The park and staging Y is `5`, not the reference's `89.6`.** Cura computed `89.6` from
+  one object's position; as a fixed constant it would sit 89.6 mm into a 250 mm bed and
+  collide with anything placed there. `Y5` is the lane our own start block already primes
+  in, so it is derived from this profile rather than from Cura's arithmetic.
+  *Limitation*: an object within ~5 mm of the bed's front edge would be in the way.
+  (Until 2026-09-20 the park moved in X only, keeping whatever Y the head was on. The
+  second dual print showed why that is not enough: the return then dives diagonally from
+  the bed edge onto the part's start point and lays the purge's trailing string across it —
+  visible as stringing on the `X330` side of the T0 cube, 51 changes' worth.)
+- **Retract before the park move**, where the reference parks first and retracts there.
+  QIDI can afford that because it already retracted 1.5 mm for its wipe; we have not.
+  A side benefit: the outbound leg is retracted, and Orca's own travel retract covers the
+  return, where the reference's return leg is un-retracted — which is exactly what the
+  strings radiating to `X0` and `X330` in the control print are.
+
+`retract_length_toolchange` is `0` for the same reason; see
+[Per-extruder arrays](#per-extruder-arrays-written-out-at-length-2). The parenthesised ternary is not a stylistic
+choice — `{x == 0 ? a : b}` fails to parse with *"Expecting tag alternative"*, and
+`{(x == 0) ? a : b}` works; verified against 2.4.2 by probing the expression through
+`machine_start_gcode`.
+
 #### G-code blocks — from the reference exports
 
 | Key | Source | Fidelity |
 |---|---|---|
 | `machine_start_gcode` | §2 start block | Expands **byte-for-byte** to both reference files |
 | `machine_end_gcode` | §4 end block, all 15 lines | **Byte-identical** |
-| `change_filament_gcode` | §7 variant C | Structure reproduced; see the accepted diffs in `TODO.md` |
+| `change_filament_gcode` | §7 variant C, plus the park and purge around it | Rewritten 2026-09-20; see [Park and purge](#park-and-purge--the-tool-change-block) |
 | `before_layer_change_gcode` | cleared to `""` | The reference has no per-layer `G92 E0` |
 | `time_lapse_gcode` | cleared to `""` | Neither reference contains `;TIMELAPSE_TAKE_FRAME` |
 
@@ -333,11 +523,27 @@ Both were invisible until the process profiles were slice-tested through a flatt
 chain, because the CLI never resolved `inherits` and so never saw the inherited values.
 The GUI does resolve it, so both would have bitten on first use.
 
-**Bed temperature is 80 °C**, from `M140 S80` / `M190 S80` in both references. This
-contradicts `PrusaSlicer_fast.ini`, which says 60 °C; the G-code is ground truth. The value
-itself is a *filament* property in Orca (`hot_plate_temp`), so it lives in the filament
-profile, not here — see [Filament profile](#filament-profile). Both references emit the
-same 80 °C with PLA alone and with PLA + PETG, so it is not a material-specific number.
+**Bed temperature is 60 °C** as of 2026-10-01 — it was 80, and the reversal is worth
+reading in full.
+
+The two original exports ask for `M140 S80` / `M190 S80`, which contradicted
+`PrusaSlicer_fast.ini`'s 60 °C. The project resolved that in favour of the G-code, reasoning
+that both references emitted 80 with PLA alone and with PLA + PETG, so it was not a
+material-specific number.
+
+**The three two-cube exports added on 2026-10-01 ask for 60** — PLA in both slots, the same
+plate, the same job this profile is built for — agreeing with the ini. And
+`qp_2cube-mult.gcode` printed successfully on the machine where our 80 °C version of the
+same plate failed. 80 °C is also above PLA's glass transition, so the first layers never
+fully set and stay rubbery for the whole print, which is a textbook cause of a tall part
+releasing from a textured plate.
+
+What remains unexplained: `single-extruder.gcode` is PLA-only and asks for 80. Something
+differed between the exports — most likely a different filament preset in QIDI Print — and
+the files do not say which. Recorded in `TODO.md`.
+
+The value is a *filament* property in Orca (`hot_plate_temp`), so it lives in the filament
+profile, not here — see [Filament profile](#filament-profile).
 
 ## Process profiles
 
@@ -372,7 +578,10 @@ independently corroborated by `PrusaSlicer_fast.ini`: `initial_layer_line_width`
 | `travel_speed_z` | `5` | Reference G-code: every move that carries a Z change runs at `F300`. Cura `speed_z_hop 5`. Applies to OrcaSlicer's Z-only moves — the descent to the first layer and, on 2.3.1, the unlift at each tool change; layer changes are folded into the first XY travel of the layer, as Cura does too |
 | `default_acceleration` | `0` | Reference G-code: no `M204` anywhere. `0` disables every per-feature acceleration command (`v2.4.2:GCode.cpp:4764`, `:6415`, `:7383`); the base's `500` emitted `M204 S500` |
 | `default_jerk` | `0` | Reference G-code: no `M205` anywhere. `0` disables every jerk command (`:4768`, `:6442`, `:7398`); the base's `8` emitted `M205 X8 Y8`. (Cura carries `acceleration_print 500` / `jerk_print 8` too — the same numbers — but with emission off) |
-| `ooze_prevention` | `1` | Reference G-code: the idle hotend is parked at 150 °C (`M104 T0 S150`, 27×). The temperature itself is the filament's `idle_temperature`; see [Filament profile](#filament-profile) |
+| `ooze_prevention` | `0` | Turned **off** 2026-09-20 after the first dual print — it layered a second, blocking `M109` on top of the tool-change block's own and stalled the print. See [Ooze prevention](#process-profiles) below. (It was `1`, from the reference's `M104 T0 S150`, 27×) |
+| `set_other_flow_ratios` | `1` | Orca's gate for the per-feature flow-ratio keys. With it `0` — the inherited value — `first_layer_flow_ratio` is accepted, written into the output's config block, and **silently ignored**. Verified against 2.4.2 by slicing with the gate both ways |
+| `first_layer_flow_ratio` | `1.147` | Measured, not chosen: QIDI's first layer deposits `0.0499` mm of filament per mm of path, ours deposited `0.0435` — 14.7 % less for the same nominal 0.42 × 0.3 line. See [The first layer was 15 % light](#the-first-layer-was-15-light) |
+| `skirt_type` | `perobject` | Reference G-code: QIDI's one-head-per-object export gives **each tool its own skirt** before it touches its own part — `T0 → SKIRT → walls`, then `T1 → SKIRT → walls` on layer 1. Orca's inherited `combined` draws a single skirt with whichever tool starts layer 1, which is always T0, leaving the second head's first bed contact to be its own wall. Added 2026-10-01; see [Each tool needs its own skirt](#each-tool-needs-its-own-skirt) |
 | `compatible_printers` | both printer names | Required by two different OrcaSlicer code paths |
 
 **First layer 0.3 mm, on all five.** The stock profiles each set this equal to their own
@@ -418,9 +627,9 @@ per-material tuning belong after a first successful print, not here.
 |---|---|---|
 | `nozzle_temperature_initial_layer` | `200` | `M104 T0 S200` / `M109 T0 S200` in both references; `first_layer_temperature = 200` in `PrusaSlicer_fast.ini` |
 | `nozzle_temperature` | `200` | `temperature = 200` in `PrusaSlicer_fast.ini`; the single reference never leaves 200 °C (its one mid-print `M104 S200` re-asserts the same value) |
-| every `*_plate_temp` and `*_plate_temp_initial_layer` | `80` | `M140 S80` / `M190 S80` in both references |
+| every `*_plate_temp` and `*_plate_temp_initial_layer` | `60` | `M140 S60` / `M190 S60` in all three two-cube exports (2026-10-01). Was `80`, from the two original references; see [Bed temperature](#values-from-the-reference-g-code) for the reversal |
 | `enable_pressure_advance` | `0` | No `M900` in either reference, in `PrusaSlicer_fast.ini`, or in the Simplify3D `.fff` |
-| `idle_temperature` | `150` | `M104 T0 S150` in the dual reference, every time the PLA hotend is parked. Used only while the process profile's `ooze_prevention` is on |
+| `idle_temperature` | `150` | `M104 T0 S150` in the dual reference, every time the PLA hotend is parked. **Inert since 2026-09-20**: it is read only while the process profile's `ooze_prevention` is on, and that is now `0`. Kept so re-enabling is a one-key change |
 | `compatible_printers` | both printer names | Same two code paths as the process profiles |
 
 Plus the same metadata shape, with one filament-only addition: **`filament_id` `GFL99`**,
@@ -435,10 +644,11 @@ Everything else is inherited, including `filament_diameter` `1.75` (which matche
 profile declares `default_bed_type: "3"` (High Temp Plate), but that key is read *only by
 the GUI* (`v2.4.2:Plater.cpp:2524`–`2538`); the CLI's `curr_bed_type` falls back to Cool
 Plate (`PrintConfig.cpp:1080`+). Setting only `hot_plate_temp*` therefore slices at
-`M140 S45` from the CLI and 80 °C from the GUI. The i-Fast has one physical bed, so every
-variant — `cool_plate_temp`, `textured_cool_plate_temp`, `eng_plate_temp`,
-`hot_plate_temp`, `textured_plate_temp`, `supertack_plate_temp` and each
-`*_initial_layer` — is 80. Confirmed empirically: the slice emits `M140 S80` / `M190 S80`.
+`M140 S45` from the CLI and the intended temperature from the GUI. The i-Fast has one
+physical bed, so every variant — `cool_plate_temp`, `textured_cool_plate_temp`,
+`eng_plate_temp`, `hot_plate_temp`, `textured_plate_temp`, `supertack_plate_temp` and each
+`*_initial_layer` — carries the same number, **60** since 2026-10-01. Confirmed
+empirically: the slice emits `M140 S60` / `M190 S60`.
 
 **Pressure advance is off.** The parent `Qidi Generic PLA` ships
 `enable_pressure_advance: 1` with `pressure_advance: 0.031`, which on a `marlin` flavor
@@ -448,6 +658,56 @@ profiles — the 0.031 is an Orca vendor value with no i-Fast provenance, and th
 scope puts pressure advance out of scope until after a first print. `pressure_advance` itself is
 left inherited so the number survives for later tuning; it is simply unused. Recorded in
 `TODO.md`.
+
+**The first layer was 15 % light.** `first_layer_flow_ratio` is `1.147` and
+`set_other_flow_ratios` is `1`. The number comes from measuring both slicers' output on the
+same plate, after `reference/qp_2cube-mult.gcode` printed successfully where our version
+failed:
+
+| | cross-section of the first-layer extrudate |
+|---|---|
+| QIDI Print | `0.0499` mm E per mm of path → **0.1200 mm²** |
+| ours, before | `0.0435` → **0.1046 mm²** |
+
+Both slicers were asked for the same line. They disagree on what that means. Cura computes
+a plain rectangle — `0.4 × 0.3 = 0.1200` — while Orca uses a rounded-end model and then
+applies the inherited `filament_flow_ratio` of `0.98`:
+`(0.3 × (0.42 − 0.3) + π(0.15)²) × 0.98 = 0.1046`. Same nominal dimensions, 15 % less
+plastic on the plate, and a first layer the machine owner described as "slightly more
+glossy and thin".
+
+With both keys set, every first-layer feature matches the reference: outer wall `0.0499`
+against `0.0499`, inner wall the same, bottom surface `0.0501`. **The skirt does not** —
+it stays at `0.0435`, because Orca excludes it from `first_layer_flow_ratio`. That is
+acceptable: the skirt's job here is to settle pressure and wipe the nozzle, not to adhere.
+
+`set_other_flow_ratios` is the part worth remembering. Without it the flow key is accepted
+by the preset loader, appears in the exported config block as `1.147`, and changes nothing.
+
+**Each tool needs its own skirt.** `skirt_type` is `perobject`, not the inherited
+`combined`, and the source is QIDI's own one-head-per-object export
+(`reference/qp_2cube-mult.gcode`, extraction §10.2). Its layer 1 reads:
+
+```
+T0 → ;TYPE:SKIRT → WALL-INNER → WALL-OUTER → SKIN     (T0's cube)
+T1 → ;TYPE:SKIRT → WALL-INNER → WALL-OUTER → SKIN     (T1's cube)
+```
+
+Each tool lays a complete skirt — 272 and 293 moves, layer 1 only, nested 0.8 mm apart —
+before touching its own part, and the filament the two tools dispense comes out balanced to
+within 1 mm (1.57022 m against 1.57120 m).
+
+`combined`, which the base profile inherits, draws **one** skirt with whichever tool is
+active when layer 1 begins — always T0, because the start block leaves T0 selected. In a
+two-object dual print that gave T0 43.83 mm of pressure-settling, nozzle-wiping skirt and
+gave the second head none: its first contact with the plate was its own inner wall,
+straight off an 8.5 mm purge at the park and a long retracted travel. It was the entire
+difference in filament dispensed between our two cubes (T0 1296.15 mm, T1 1254.32 mm) and
+the only first-layer asymmetry left between them, in four consecutive prints where the
+second head's object was the one that failed. `TODO.md` has the history.
+
+`perobject` is Orca's serialized value for the GUI's "Per object"; the enum is
+`combined` / `perobject`, verified against 2.4.2 by slicing both.
 
 **Ooze prevention, and what it does to a multi-material job.** With `ooze_prevention`
 on, OrcaSlicer parks the *outgoing* hotend before each tool change with a non-blocking
@@ -466,6 +726,19 @@ sets both nozzle temperatures. Time cost: at QIDI's stated heat-up rate of 1.6 �
 (Cura `machine_nozzle_heat_up_speed`) PLA climbs from 150 to 200 in about 31 s, which
 the 30 s preheat covers; a material parked 80 °C below its print temperature would want
 `preheat_time` nearer 50.
+
+**It is off as of 2026-09-20, and the reason is the `M109` rather than the temperature.**
+`post_toolchange` emits its own blocking `M109 S<temp> T<new>` *on top of* the one in
+`change_filament_gcode`, so every tool change waited twice, with both nozzles standing on
+the part. The failing two-cube print reached 5 % in 15 minutes against OrcaSlicer's own
+`43m 49s` estimate for the whole job. The 15 cooldowns that survived the 30 s backtrace
+all fell in the slow early layers — exactly where the part stopped sticking.
+
+This does give up the standby drop, which the reference does have and which the control
+print used successfully. If the idle nozzle turns out to ooze once the purge is in place,
+the way back is not this flag but the reference's own line — `M104 S150 T{previous_extruder}`
+before the `T` inside `change_filament_gcode` — which buys the standby without a second
+blocking wait. Recorded in `TODO.md`.
 
 **Fan settings are inherited, not derived.** `close_fan_the_first_x_layers` `1` and
 `full_fan_speed_layer` `3` from `fdm_filament_pla` produce a ramp close to but not equal to
@@ -532,7 +805,7 @@ This only affects command-line slicing. **Nothing about normal GUI use requires 
   It falls back to `btPEI` regardless, so this is explicitness rather than a change.
   **Caveat:** `default_bed_type` is read only by the GUI; the CLI's `curr_bed_type`
   defaults to Cool Plate. The filament profile therefore has to set *every* plate-temp
-  variant to 80 °C or GUI and CLI slices will disagree — see `TODO.md`.
+  variant to 60 °C or GUI and CLI slices will disagree — see `TODO.md`.
 - **`support_air_filtration: "0"`** — otherwise `M106 P3 S255` is injected after the start
   block and `M106 P3 S0` after `;End of Gcode`. See
   [the section above](#support_air_filtration-0--a-machine-key-the-filament-profile-forced-out).
@@ -671,7 +944,7 @@ them, and they settle what CLI evidence could not:
   i-Fast's firmware auto-lift; `TODO.md` says what to watch on the first print.
 
 Both files were re-sliced after the first-print review and show its result from the
-GUI side: `travel_speed = 100`, `ooze_prevention = 1`, `idle_temperature = 150,150` and
+GUI side: `travel_speed = 100`, `ooze_prevention = 1` (now `0`; see above), `idle_temperature = 150,150` and
 `emit_machine_limits_to_gcode = 0` in the config block; no `F30000`, no `M20x`, one Z
 change per layer, 1.5 mm retracts at `F1800` and `M106 T-2 S255` once at layer 1 in the
 body; and, in the dual file, ooze prevention's cooldown/preheat lines with 0 mm retract
@@ -699,7 +972,8 @@ commented-out `T1` heating lines, whose value tracks the second slot's filament.
 printing max `F3600`, retract set `{(-1.5, F1800)}`, one Z change per layer — all equal
 to the reference's. `M106 T-2 S255` once, at layer 1, as in the reference.
 
-Dual-extruder: all 101 body tool changes emit
+Dual-extruder: **this is the shape that failed on the machine**, and the report below
+still describes the old block. Before 2026-09-20 all 101 body tool changes emitted
 
 ```gcode
 G92 E0                    ; OrcaSlicer's own reset_e() before the change
@@ -711,20 +985,22 @@ M106 S<n>                 ; OrcaSlicer re-asserting fan speed
 M109 S<t> T1              ; ooze prevention's own wait, returns immediately
 ```
 
-which is reference variant B/C's shape, minus the documented omissions: the commented
-`;M105`, and the 8.5 mm retract/prime pair that OrcaSlicer's own retraction owns (at
-our inherited 2 mm — matching the reference is a one-key change to
-`retract_length_toolchange`, and `TODO.md` explains why that is the user's call). Every
-tool change leaves the incoming extruder with 0 mm retract debt, in ours and in the
-reference alike. The literal `;_FORCE_RESUME_FAN_SPEED` marker OrcaSlicer appends after
+— reference variant B/C's shape, minus the 8.5 mm retract/prime pair and the park that
+goes with it. On paper the omission looked like a retraction-depth question. On the
+plate it was not: with no park, every one of those `T` lines executed with the head
+standing inside an object footprint at print Z. See
+[Park and purge](#park-and-purge--the-tool-change-block) for the block that replaced it
+and why. `ooze_prevention` is off now too, so the two `M104 S150`/`M109 … T<n>` lines
+above are gone as well.
+
+The literal `;_FORCE_RESUME_FAN_SPEED` marker OrcaSlicer appends after
 `change_filament_gcode` survives into the file **only after the initial tool
 selection** — one occurrence per file; the post-processor replaces it with the actual
-`M106` everywhere else.
+`M106` everywhere else. That is unchanged.
 
 Open differences the report lists every run — `G92 E0` after every retraction against
 the reference's 7, OrcaSlicer's extra `G21` / `G90` / `M82`, the reference's unexplained
-mid-print `M104 S200`, the different preheat/cooldown schedules, and our `M109` firing at
-every tool change where QIDI Print blocks only when switching to T0 — are all in
+mid-print `M104 S200`, and the different preheat/cooldown schedules — are all in
 `TODO.md`.
 
 ## Scope
@@ -815,15 +1091,25 @@ profile and show every change of the review from the GUI side (see
 3. **Which fan spins up as layer 1 starts?** That is `M106 T-2 S255`, reproduced from the
    reference without knowing its target. Chamber circulation, exhaust or a side blower —
    note which. It decides whether the command matters for part cooling.
-4. **First-layer squish at 0.3 mm and bed at 80 °C.** Both are the reference's numbers
-   and both are on the high side for PLA. If the first layer shows elephant's foot, drop
-   the bed to 60 °C (QIDI's ini value) in the filament preset before touching anything
-   else.
+4. **First-layer squish at 0.3 mm and bed at 60 °C.** The bed was 80 until 2026-10-01;
+   see [Bed temperature](#values-from-the-reference-g-code) for why it moved. If the first
+   layer will not stick at 60, the older exports' 80 is the documented alternative — but
+   check the squish first, since `first_layer_flow_ratio` now matches QIDI's deposition.
 5. **Motion.** Travel at 100 mm/s, retract 1.5 mm at 30 mm/s, no Z-hop, firmware-stored
    acceleration — all QIDI Print's numbers. Stringing, if any, is then a material
    question, not a profile one.
 
-**The first dual print** (both slots PLA): confirm the idle hotend cools to 150 °C when
-it will be parked for a while and that no tool change waits more than a few seconds.
-Strings or blobs at the changes → raise `retract_length_toolchange` to `["8.5","8.5"]`,
-which is the reference's value and a one-key change; `TODO.md` has the mechanism.
+**The first dual print happened on 2026-09-12, and it failed** — the part stuck for a
+few layers, went spongey and came off the plate. The cause was the tool-change block
+running wherever the previous extrusion ended, which on that job was inside an object
+footprint 100 times out of 100. It is fixed by
+[Park and purge](#park-and-purge--the-tool-change-block); the whole diagnosis is in
+[`intent/0004`](intent/0004-make-the-dual-extruder-print-work.md) and `TODO.md`
+§*Found by the first dual print*.
+
+**What to watch on the retry** (both slots PLA): that every `T` happens with the head out
+at `X0` or `X330` and not over the part; that the purge lands at the bed edge; that the
+walls are solid rather than spongey; and that the job finishes somewhere near
+OrcaSlicer's own estimate rather than five times it. Strings running to the left and
+right edges of the plate are expected — the reference file does the same thing, for the
+same reason — and are bed debris, not a print defect.
