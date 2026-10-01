@@ -1204,7 +1204,20 @@ part. Head 2's spaghettied. The cause was the `G0 X165 Y5` staging move added on
       layer/cube combinations are printed by both tools). **No QIDI Print export has ever
       given a whole object to one head.** Likewise `CUBE-head2.gcode`: T1 alone works, but
       T1 is selected once and stays down.
-- [ ] **`TODO(verify):` T1 gets no skirt, and that is the only first-layer asymmetry left.**
+- [ ] **T1 gets no skirt — and QIDI's one-head-per-object export gives every tool its own.**
+      **Confirmed against ground truth 2026-10-01.** `reference/qp_2cube-mult.gcode` was
+      re-exported with QIDI Print's per-feature extruder settings cleared, and is now a
+      true one-head-per-object plate: 0 of 198 layer/cube combinations printed by both
+      tools, T0 owning the right cube and T1 the left. Its layer 1 reads
+      `T0 → SKIRT → walls → skin`, then `T1 → SKIRT → walls → skin` — **each tool lays a
+      complete skirt around both cubes before touching its own part** (272 and 293 moves,
+      `Z0.3` only, nested 0.8 mm apart). Filament comes out balanced to within 1 mm
+      (1.57022 m / 1.57120 m) where ours differs by the 43.83 mm of skirt T0 alone gets.
+      Extraction §10.2. **This is now the leading candidate for the T1 failures**, and
+      unlike the earlier guesses it is a difference from ground truth rather than a theory.
+      Candidate fix: `skirt_type` per object, or whatever Orca 2.4.2 offers that gives each
+      tool its own layer-1 priming loop. Not yet applied.
+- [ ] **`TODO(verify):` the original statement of the above —**
       Measured on the failing file: filament per feature is identical between the two cubes
       to the milligram — sparse infill 456.96 mm each, inner wall 288.97, outer wall
       265.20 — except `T0 Skirt 43.83`, which is the entire difference in net dispensed
